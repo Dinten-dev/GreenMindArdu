@@ -1,0 +1,30 @@
+# ── Build artifacts ──────────────────────────────
+.pio/
+.pio/build/
+.pio/libdeps/
+build/
+*.o
+*.elf
+*.hex
+*.map
+
+# ── Python (MicroPython tooling) ────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# ── IDE ──────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS files ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Firmware binaries (track only source) ────────
+*.bin
