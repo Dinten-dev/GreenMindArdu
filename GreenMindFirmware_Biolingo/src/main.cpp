@@ -400,7 +400,7 @@ void startRuntimeMode() {
     server.begin();
 
     // Initial display
-    Display::showStreaming(macAddress, true, true, true, 0, false);
+    Display::showStreaming(macAddress, true, true, true, 0, false, 0.0f);
 
     Serial.printf("[Biolingo] Streaming started (v%s, OTA, AD8232)\n", FIRMWARE_VERSION);
 }
@@ -627,13 +627,19 @@ void streamReadings() {
 
         // 5. Send batch when full (380 samples = 1 second)
         if (bufferIndex >= BATCH_SIZE) {
+            // Calculate batch mean for display
+            float batchMean = 0.0f;
+            for (int i = 0; i < BATCH_SIZE; i++) batchMean += sampleBuffer[i];
+            batchMean /= BATCH_SIZE;
+
             sendBatch();
             bufferIndex = 0;
 
             // Update display after each batch (once per second)
             bool wifiOk = (WiFi.status() == WL_CONNECTED);
             Display::showStreaming(macAddress, wifiOk, true,
-                                  lastSendOk, streamErrors, currentLeadOff);
+                                  lastSendOk, streamErrors, currentLeadOff,
+                                  batchMean);
         }
     }
 }

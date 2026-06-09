@@ -40,7 +40,8 @@ void showOtaUpdate(const String& newVersion);
 
 /// Main streaming status screen (called once per batch send).
 void showStreaming(const String& mac, bool wifiOk, bool gwOk,
-                   bool sendOk, int errorCount, bool leadOff);
+                   bool sendOk, int errorCount, bool leadOff,
+                   float currentMv);
 
 /// Error / reboot screen.
 void showError(const String& line1, const String& line2);

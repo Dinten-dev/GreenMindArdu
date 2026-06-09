@@ -172,7 +172,8 @@ void Display::showOtaUpdate(const String& newVersion) {
 }
 
 void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
-                            bool sendOk, int errorCount, bool leadOff) {
+                            bool sendOk, int errorCount, bool leadOff,
+                            float currentMv) {
     if (!displayReady) return;
     clearScreen();
 
@@ -198,20 +199,28 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
 
     drawSeparator(33);
 
-    // Streaming status
+    // Streaming status + live mV value
     oled.setCursor(0, 36);
-    oled.print("TX: 380Hz ");
-    if (sendOk) {
-        oled.print("[OK]");
-    } else {
-        oled.print("[ERR]");
-    }
+    oled.print("TX:");
+    oled.print(sendOk ? "OK" : "ERR");
 
-    // Error count
+    // Live mV value, right-aligned
+    char mvBuf[12];
+    if (leadOff) {
+        snprintf(mvBuf, sizeof(mvBuf), "---.-mV");
+    } else {
+        snprintf(mvBuf, sizeof(mvBuf), "%.1fmV", currentMv);
+    }
+    int mvLen = strlen(mvBuf);
+    int mvX = OLED_WIDTH - mvLen * 6;  // 6px per char at textSize 1
+    if (mvX < 42) mvX = 42;            // Don't overlap TX status
+    oled.setCursor(mvX, 36);
+    oled.print(mvBuf);
+
+    // Error count + Lead-off indicator
     oled.setCursor(0, 48);
     oled.printf("Err:%-3d", errorCount);
 
-    // Lead-off indicator
     oled.setCursor(64, 48);
     oled.print("LO:");
     if (leadOff) {
