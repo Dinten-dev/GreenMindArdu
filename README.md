@@ -1,6 +1,6 @@
 # GreenMind ESP32 Sensor Firmware
 
-> Arduino C++ and MicroPython firmware for GreenMind bioelectric plant sensors. Captures bioelectrical signals at **380 Hz** with a 3-sample Moving Average filter, sends data to the Raspberry Pi Gateway via HTTP POST. Supports automatic provisioning via captive portal and OTA firmware updates.
+> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a 3-sample Moving Average filter, sends data to the Raspberry Pi Gateway via HTTP POST. Supports automatic provisioning via captive portal and OTA firmware updates.
 
 > **⚠️ R&D Status:** Part of the [GreenMind](https://github.com/Dinten-dev/GreenMindDB) research platform by **Galaxyadvisors AG** in collaboration with FHNW.
 
