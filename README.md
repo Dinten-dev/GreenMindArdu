@@ -58,31 +58,17 @@ Plant → AD8232 → GPIO (ADC) → 380 Hz timer → Moving Avg → mV conversio
 
 ---
 
-## Firmware Variants
+## Firmware
 
-| Directory | Board | Framework | Purpose | Features |
-|-----------|-------|-----------|---------|----------|
-| `GreenMindFirmware/` | ESP32-WROOM | Arduino IDE | **Production** — Gateway integration | Captive portal, gateway discovery, 380 Hz streaming |
-| `GreenMindFirmware_AD8232/` | ESP32-WROOM | Arduino IDE | **Biosignal R&D** — Artifact detection | Lead-off, rail hit, jump detection, compact JSON array format |
-| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | **Custom PCB** — Full-featured | OTA, OLED display, AD8232 artifact detection, lead-off display |
-| `GreenMindFirmware_OTA/` | ESP32-WROOM | PlatformIO | **OTA-enabled** — Remote updates | OTA client via gateway, SHA256 verification |
-| `GreenMind/` | ESP32 | MicroPython | **Prototype** — Early R&D | MicroPython with mDNS, OLED display driver |
+| Directory | Board | Framework | Features |
+|-----------|-------|-----------|----------|
+| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | OTA updates, OLED display, captive portal, 380 Hz streaming, AD8232 artifact detection |
+
+> 📦 Archived ESP32-WROOM variants (GreenMindFirmware, AD8232, OTA) and a MicroPython prototype are available in `archive/`.
 
 ---
 
 ## Hardware Setup
-
-### ESP32-WROOM (Production / AD8232 / OTA)
-
-| Component | Pin | ESP32 GPIO |
-|-----------|-----|------------|
-| **AD8232 OUTPUT** | Analog In | `GPIO 34` (ADC1_CH6) |
-| **AD8232 SDN** | Keep Active | `3.3V` |
-| **AD8232 LO+** | Lead-Off + | `GPIO 32` (AD8232 variant) |
-| **AD8232 LO-** | Lead-Off - | `GPIO 33` (AD8232 variant) |
-| **SSD1306 SCL** | I2C Clock | `GPIO 22` (optional) |
-| **SSD1306 SDA** | I2C Data | `GPIO 21` (optional) |
-| **Plant Electrodes** | Via 3.5mm jack | — |
 
 ### Biolingo v22 Custom PCB (ESP32-S3)
 
@@ -102,29 +88,18 @@ Plant → AD8232 → GPIO (ADC) → 380 Hz timer → Moving Avg → mV conversio
 ```
 GreenMindArdu/
 ├── flash-sensor.sh                 # 🚀 One-liner flash tool (curl-pipe-bash)
-├── GreenMindFirmware/              # Production firmware (Arduino IDE)
-│   └── GreenMindFirmware.ino       # Single-file sketch — captive portal + streaming
-├── GreenMindFirmware_AD8232/       # AD8232 R&D firmware (Arduino IDE)
-│   └── GreenMindFirmware_AD8232.ino
-├── GreenMindFirmware_Biolingo/     # Biolingo v22 PCB firmware (PlatformIO)
+├── GreenMindFirmware_Biolingo/     # Active firmware (ESP32-S3, PlatformIO)
 │   ├── platformio.ini              # ESP32-S3 build config
 │   ├── partitions.csv              # Custom partition table (OTA)
 │   └── src/
 │       ├── main.cpp                # Main firmware logic
 │       ├── display.cpp / .h        # SSD1306 OLED display driver
 │       └── ota_client.cpp / .h     # OTA update client
-├── GreenMindFirmware_OTA/          # OTA-enabled firmware (PlatformIO)
-│   ├── platformio.ini              # ESP32-WROOM build config
-│   ├── partitions.csv              # Custom partition table (OTA)
-│   └── src/
-│       ├── main.cpp                # Main firmware logic
-│       └── ota_client.cpp / .h     # OTA update client
+├── archive/                        # Archived firmware variants
+│   ├── GreenMindFirmware/          # ESP32-WROOM production (Arduino IDE)
+│   ├── GreenMindFirmware_AD8232/   # ESP32-WROOM biosignal R&D
+│   └── GreenMindFirmware_OTA/      # ESP32-WROOM OTA-enabled
 ├── GreenMind/                      # MicroPython prototype (legacy)
-│   ├── boot.py / main.py           # MicroPython entrypoints
-│   ├── ssd1306.py                  # OLED display driver
-│   ├── flash_helper.py             # Flash utility
-│   └── src/
-│       └── mdns_server.py          # mDNS discovery
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -134,23 +109,9 @@ GreenMindArdu/
 
 ## Prerequisites
 
-### Arduino IDE (Production / AD8232 variants)
-
-- **Arduino IDE** ≥ 2.0
-- **ESP32 Board Package** — Add `https://dl.espressif.com/dl/package_esp32_index.json` to Board Manager URLs
-- **Board**: `ESP32 Dev Module` (or `ESP32-WROOM-DA Module`)
-- **Libraries**:
-  - `ArduinoJson` ≥ 7.0 (via Library Manager)
-
-### PlatformIO (Biolingo / OTA variants)
-
-- **PlatformIO IDE** (VS Code extension) or **PlatformIO CLI**
+- **PlatformIO CLI** or **PlatformIO IDE** (VS Code extension)
 - Dependencies are auto-resolved from `platformio.ini`
-
-### MicroPython (Prototype)
-
-- **esptool.py** for flashing
-- **MicroPython firmware** for ESP32 (included as `ESP32_GENERIC-20240602-v1.23.0.bin`)
+- The [flash-sensor.sh](flash-sensor.sh) script installs PlatformIO automatically if missing
 
 ---
 
@@ -191,18 +152,7 @@ pio run --target upload
 pio device monitor
 ```
 
-#### MicroPython (Prototype)
 
-```bash
-# Erase flash
-esptool.py --port /dev/cu.usbserial-0001 erase_flash
-
-# Flash MicroPython
-esptool.py --port /dev/cu.usbserial-0001 write_flash -z 0x1000 ESP32_GENERIC-20240602-v1.23.0.bin
-
-# Copy source files
-# Use ampy, mpremote, or Thonny to upload boot.py, main.py, ssd1306.py, src/
-```
 
 ---
 
@@ -235,7 +185,7 @@ The discovered IP is cached in NVS for subsequent boots.
 
 ## OTA Updates
 
-The **Biolingo** and **OTA** firmware variants support over-the-air updates:
+The firmware supports over-the-air updates via the Raspberry Pi Gateway:
 
 1. The sensor checks the gateway's `/api/v1/firmware/check` endpoint periodically (every 1 hour)
 2. If a newer firmware is available, the binary is downloaded and verified via **SHA256**
