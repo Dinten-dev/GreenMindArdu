@@ -267,37 +267,18 @@ choose_firmware() {
     step "4/6 — Firmware Selection"
 
     echo ""
-    echo -e "${BOLD}Available firmware variants:${NC}"
+    echo -e "${BOLD}Available firmware:${NC}"
     echo ""
-    echo -e "  ${GREEN}1)${NC} ${BOLD}GreenMindFirmware${NC}          — Production (ESP32-WROOM)"
-    echo -e "     ${DIM}Captive portal, gateway discovery, 380 Hz streaming${NC}"
+    echo -e "  ${GREEN}1)${NC} ${BOLD}GreenMindFirmware_Biolingo${NC} — ESP32-S3 Biolingo v22"
+    echo -e "     ${DIM}OLED display, OTA updates, AD8232 artifact detection, 380 Hz streaming${NC}"
     echo ""
-    echo -e "  ${GREEN}2)${NC} ${BOLD}GreenMindFirmware_AD8232${NC}   — Biosignal R&D (ESP32-WROOM)"
-    echo -e "     ${DIM}Lead-off detection, rail hit, jump detection${NC}"
+    echo -e "     ${DIM}(Archived WROOM variants available in archive/ directory)${NC}"
     echo ""
-    echo -e "  ${GREEN}3)${NC} ${BOLD}GreenMindFirmware_Biolingo${NC} — Custom PCB (ESP32-S3 Biolingo v22)"
-    echo -e "     ${DIM}OLED display, OTA updates, AD8232 artifact detection${NC}"
-    echo ""
-    echo -e "  ${GREEN}4)${NC} ${BOLD}GreenMindFirmware_OTA${NC}      — OTA-enabled (ESP32-WROOM)"
-    echo -e "     ${DIM}Remote firmware updates via gateway, SHA256 verification${NC}"
-    echo ""
-    read -r -p "Select firmware [1-4] (default: 1): " fw_choice
+    read -r -p "Select firmware [1] (default: 1): " fw_choice
     fw_choice="${fw_choice:-1}"
 
     case "${fw_choice}" in
         1)
-            FIRMWARE="GreenMindFirmware"
-            BUILD_SYSTEM="arduino"
-            FQBN="${FQBN_WROOM}"
-            BOARD_DESC="ESP32-WROOM (Production)"
-            ;;
-        2)
-            FIRMWARE="GreenMindFirmware_AD8232"
-            BUILD_SYSTEM="arduino"
-            FQBN="${FQBN_WROOM}"
-            BOARD_DESC="ESP32-WROOM (AD8232 R&D)"
-            ;;
-        3)
             FIRMWARE="GreenMindFirmware_Biolingo"
             BUILD_SYSTEM="platformio"
             FQBN="${FQBN_S3}"
@@ -305,14 +286,7 @@ choose_firmware() {
             # PlatformIO needed for this variant
             install_platformio
             ;;
-        4)
-            FIRMWARE="GreenMindFirmware_OTA"
-            BUILD_SYSTEM="platformio"
-            FQBN="${FQBN_WROOM}"
-            BOARD_DESC="ESP32-WROOM (OTA-enabled)"
-            # PlatformIO needed for this variant
-            install_platformio
-            ;;
+
         *)
             die "Invalid selection: ${fw_choice}"
             ;;

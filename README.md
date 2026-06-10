@@ -158,7 +158,7 @@ GreenMindArdu/
 
 ### One-Liner Flash
 
-Plug in your ESP32 via USB-C and run:
+Plug in your ESP32-S3 (Biolingo v22) via USB-C and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindArdu/main/flash-sensor.sh | bash
@@ -169,36 +169,21 @@ This single command handles everything:
 | Step | Action | Details |
 |------|--------|---------|
 | **1** | Source Code | Clones the firmware repository (or uses local copy) |
-| **2** | Toolchain | Installs `arduino-cli` + ESP32 core + ArduinoJson (or PlatformIO) |
-| **3** | USB Detection | Auto-detects the ESP32 serial port |
-| **4** | Firmware Selection | Interactive menu to choose the firmware variant |
+| **2** | Toolchain | Installs PlatformIO with ESP32-S3 support |
+| **3** | USB Detection | Auto-detects the ESP32-S3 serial port |
+| **4** | Firmware | Selects GreenMindFirmware_Biolingo (ESP32-S3 Biolingo v22) |
 | **5** | Compile & Flash | Builds and uploads the firmware in one step |
 | **6** | Verification | Optionally opens serial monitor to verify boot |
-
-#### Firmware Selection Menu
-
-```
-  1) GreenMindFirmware          — Production (ESP32-WROOM)
-  2) GreenMindFirmware_AD8232   — Biosignal R&D (ESP32-WROOM)
-  3) GreenMindFirmware_Biolingo — Custom PCB (ESP32-S3 Biolingo v22)
-  4) GreenMindFirmware_OTA      — OTA-enabled (ESP32-WROOM)
-```
 
 > **Note:** The script is safe to re-run — it skips tools that are already installed and only downloads what's needed.
 
 > ⚠️ Make sure you're using a **data-capable USB cable** (not charge-only). If no device is detected, the script provides driver installation instructions.
 
+> 📦 Archived ESP32-WROOM firmware variants (GreenMindFirmware, AD8232, OTA) are available in the `archive/` directory.
+
 ### Manual Flash (Alternative)
 
-#### Arduino IDE
-
-1. Open `GreenMindFirmware/GreenMindFirmware.ino` in Arduino IDE
-2. Select Board: `ESP32 Dev Module`
-3. Select Port: your USB serial port
-4. Set Upload Speed: `921600`
-5. Click **Upload**
-
-#### PlatformIO (Biolingo / OTA)
+#### PlatformIO (recommended)
 
 ```bash
 cd GreenMindFirmware_Biolingo
