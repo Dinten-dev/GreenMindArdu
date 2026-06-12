@@ -6,7 +6,7 @@
  *
  * Features:
  *   - Captive portal setup (WiFi + pairing code provisioning)
- *   - 380 Hz ADC sampling with 20 Hz EMA lowpass + 50 Hz biquad notch (Q=30)
+ *   - 380 Hz ADC sampling with 3-sample moving average
  *   - AD8232 lead-off detection + artifact flagging
  *   - Batch POST to gateway (/api/v1/ingest, 380 samples/s)
  *   - Gateway discovery: cached IP → UDP broadcast → subnet scan
@@ -93,52 +93,16 @@ static float         lastValidValue   = -1.0f;
 static int           recoveryCounter  = 0;
 
 // ── Signal Filter ─────────────────────────────
-// Two-stage digital filter chain:
-//   1. ~20 Hz EMA Lowpass  — removes high-frequency noise above plant-signal band
-//   2.  50 Hz Biquad Notch — eliminates mains hum (Q=30, ~1.67 Hz bandwidth)
-//
-// Design rationale (Pilot Gloor, Jun 2026):
-//   The previous 3-sample moving average let 50 Hz through unattenuated.
-//   Combined with USB ground-loop coupling the AD8232 was driven into
-//   rail saturation.  This filter chain reduces the 50 Hz component
-//   from ~67 % to ~1 % of the signal energy.
+static const float LP_ALPHA      = 0.25f;   // Gloor ~20 Hz IIR lowpass (DC-preserving)
+static float       lpFilterState = 0.0f;    // first-stage 50 Hz attenuation
+static bool        lpFilterInit  = false;
 
-// ── EMA Lowpass (~20 Hz @ 380 Hz sample rate) ──
-// α = 2π·f_c / (2π·f_c + f_s)  ≈ 0.2487
-static const float EMA_ALPHA = 0.2487f;
-static float       emaState   = 0.0f;
-static bool        emaInit    = false;
-
-// ── 50 Hz Biquad Notch (Q = 30) ────────────────
-// Pre-computed coefficients for f_s = 380 Hz, f_0 = 50 Hz, Q = 30
-// Using standard IIR notch design:  ω0 = 2π·50/380
-static const float NOTCH_B0 =  0.9836f;
-static const float NOTCH_B1 = -1.5190f;
-static const float NOTCH_B2 =  0.9836f;
-static const float NOTCH_A1 = -1.5190f;
-static const float NOTCH_A2 =  0.9672f;
-
-static float notch_x1 = 0.0f, notch_x2 = 0.0f;
-static float notch_y1 = 0.0f, notch_y2 = 0.0f;
-
-float applyFilter(float newValue) {
-    // Stage 1: EMA Lowpass
-    if (!emaInit) {
-        emaState = newValue;
-        emaInit  = true;
-    }
-    emaState = EMA_ALPHA * newValue + (1.0f - EMA_ALPHA) * emaState;
-
-    // Stage 2: 50 Hz Biquad Notch (Direct Form I)
-    float x0  = emaState;
-    float y0  = NOTCH_B0 * x0 + NOTCH_B1 * notch_x1 + NOTCH_B2 * notch_x2
-              - NOTCH_A1 * notch_y1 - NOTCH_A2 * notch_y2;
-
-    notch_x2 = notch_x1;  notch_x1 = x0;
-    notch_y2 = notch_y1;  notch_y1 = y0;
-
-    return y0;
-}
+// 50 Hz mains notch (biquad, second stage, applied after the lowpass)
+static const float NOTCH_FREQ = 50.0f;      // mains frequency (Hz)
+static const float NOTCH_Q    = 30.0f;      // notch sharpness (higher = narrower)
+static float n_b0, n_b1, n_b2, n_a1, n_a2;  // normalized biquad coefficients
+static float n_z1 = 0.0f, n_z2 = 0.0f;      // transposed-DF2 state
+static bool  notchReady = false;
 
 // ── OTA Timing ────────────────────────────────
 static unsigned long lastOtaCheck = 0;
@@ -569,7 +533,33 @@ bool registerSensor() {
 }
 
 // ── Signal Filtering ──────────────────────────
-// Filter implementation moved to globals section (EMA + Biquad Notch)
+// 3-sample moving average for noise reduction
+
+float applyFilter(float newValue) {
+    if (!lpFilterInit) { lpFilterState = newValue; lpFilterInit = true; }
+    lpFilterState = LP_ALPHA * newValue + (1.0f - LP_ALPHA) * lpFilterState;
+    return lpFilterState;
+}
+
+// Build the biquad notch coefficients once (RBJ band-stop at NOTCH_FREQ)
+void initNotch() {
+    float w0    = 2.0f * PI * NOTCH_FREQ / SAMPLE_RATE;
+    float cw    = cosf(w0);
+    float alpha = sinf(w0) / (2.0f * NOTCH_Q);
+    float a0    = 1.0f + alpha;
+    n_b0 = 1.0f / a0;          n_b1 = -2.0f * cw / a0;   n_b2 = 1.0f / a0;
+    n_a1 = -2.0f * cw / a0;    n_a2 = (1.0f - alpha) / a0;
+    n_z1 = n_z2 = 0.0f;        notchReady = true;
+}
+
+// 50 Hz notch (transposed Direct-Form II). Leaves DC and the plant band intact.
+float applyNotch(float x) {
+    if (!notchReady) initNotch();
+    float y = n_b0 * x + n_z1;
+    n_z1 = n_b1 * x - n_a1 * y + n_z2;
+    n_z2 = n_b2 * x - n_a2 * y;
+    return y;
+}
 
 // ── High-Frequency Data Streaming ─────────────
 // 380 Hz sampling with AD8232 artifact detection
@@ -607,6 +597,7 @@ void streamReadings() {
         // 2. Convert to millivolts and apply filter
         float mv = (rawAdc / 4095.0f) * ADC_VOLTAGE_REF * 1000.0f;
         float filteredMv = applyFilter(mv);
+        filteredMv = applyNotch(filteredMv);   // 50 Hz mains notch
 
         // 3. Artifact detection
         uint8_t flags = FLAG_VALID;
