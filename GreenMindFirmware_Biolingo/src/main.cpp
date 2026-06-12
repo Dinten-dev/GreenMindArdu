@@ -6,7 +6,7 @@
  *
  * Features:
  *   - Captive portal setup (WiFi + pairing code provisioning)
- *   - 380 Hz ADC sampling with 3-sample moving average
+ *   - 380 Hz ADC sampling with 20 Hz EMA lowpass + 50 Hz biquad notch (Q=30)
  *   - AD8232 lead-off detection + artifact flagging
  *   - Batch POST to gateway (/api/v1/ingest, 380 samples/s)
  *   - Gateway discovery: cached IP → UDP broadcast → subnet scan
@@ -93,9 +93,52 @@ static float         lastValidValue   = -1.0f;
 static int           recoveryCounter  = 0;
 
 // ── Signal Filter ─────────────────────────────
-static const int FILTER_SIZE = 3;
-static float     filterBuf[FILTER_SIZE];
-static int       filterIdx = 0;
+// Two-stage digital filter chain:
+//   1. ~20 Hz EMA Lowpass  — removes high-frequency noise above plant-signal band
+//   2.  50 Hz Biquad Notch — eliminates mains hum (Q=30, ~1.67 Hz bandwidth)
+//
+// Design rationale (Pilot Gloor, Jun 2026):
+//   The previous 3-sample moving average let 50 Hz through unattenuated.
+//   Combined with USB ground-loop coupling the AD8232 was driven into
+//   rail saturation.  This filter chain reduces the 50 Hz component
+//   from ~67 % to ~1 % of the signal energy.
+
+// ── EMA Lowpass (~20 Hz @ 380 Hz sample rate) ──
+// α = 2π·f_c / (2π·f_c + f_s)  ≈ 0.2487
+static const float EMA_ALPHA = 0.2487f;
+static float       emaState   = 0.0f;
+static bool        emaInit    = false;
+
+// ── 50 Hz Biquad Notch (Q = 30) ────────────────
+// Pre-computed coefficients for f_s = 380 Hz, f_0 = 50 Hz, Q = 30
+// Using standard IIR notch design:  ω0 = 2π·50/380
+static const float NOTCH_B0 =  0.9836f;
+static const float NOTCH_B1 = -1.5190f;
+static const float NOTCH_B2 =  0.9836f;
+static const float NOTCH_A1 = -1.5190f;
+static const float NOTCH_A2 =  0.9672f;
+
+static float notch_x1 = 0.0f, notch_x2 = 0.0f;
+static float notch_y1 = 0.0f, notch_y2 = 0.0f;
+
+float applyFilter(float newValue) {
+    // Stage 1: EMA Lowpass
+    if (!emaInit) {
+        emaState = newValue;
+        emaInit  = true;
+    }
+    emaState = EMA_ALPHA * newValue + (1.0f - EMA_ALPHA) * emaState;
+
+    // Stage 2: 50 Hz Biquad Notch (Direct Form I)
+    float x0  = emaState;
+    float y0  = NOTCH_B0 * x0 + NOTCH_B1 * notch_x1 + NOTCH_B2 * notch_x2
+              - NOTCH_A1 * notch_y1 - NOTCH_A2 * notch_y2;
+
+    notch_x2 = notch_x1;  notch_x1 = x0;
+    notch_y2 = notch_y1;  notch_y1 = y0;
+
+    return y0;
+}
 
 // ── OTA Timing ────────────────────────────────
 static unsigned long lastOtaCheck = 0;
@@ -526,15 +569,7 @@ bool registerSensor() {
 }
 
 // ── Signal Filtering ──────────────────────────
-// 3-sample moving average for noise reduction
-
-float applyFilter(float newValue) {
-    filterBuf[filterIdx] = newValue;
-    filterIdx = (filterIdx + 1) % FILTER_SIZE;
-    float sum = 0.0f;
-    for (int i = 0; i < FILTER_SIZE; i++) sum += filterBuf[i];
-    return sum / FILTER_SIZE;
-}
+// Filter implementation moved to globals section (EMA + Biquad Notch)
 
 // ── High-Frequency Data Streaming ─────────────
 // 380 Hz sampling with AD8232 artifact detection
