@@ -1,6 +1,6 @@
 # GreenMind ESP32 Sensor Firmware
 
-> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a 3-sample Moving Average filter, sends data to the Raspberry Pi Gateway via HTTP POST. Supports automatic provisioning via captive portal and OTA firmware updates.
+> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a two-stage digital filter (20 Hz EMA lowpass + 50 Hz biquad notch), sends data to the Raspberry Pi Gateway via HTTP POST. Supports automatic provisioning via captive portal and OTA firmware updates.
 
 > **⚠️ R&D Status:** Part of the [GreenMind](https://github.com/Dinten-dev/GreenMindDB) research platform by **Galaxyadvisors AG** in collaboration with FHNW.
 
@@ -32,14 +32,14 @@
 | **ADC Resolution** | 12-bit (0–4095) |
 | **ADC Range** | 0–3.3 V |
 | **Output Unit** | Millivolt (mV) |
-| **Filter** | 3-sample Moving Average |
+| **Filter** | 20 Hz EMA Lowpass + 50 Hz Biquad Notch (Q=30) |
 | **Batch Size** | 380 samples per HTTP POST (= 1 second) |
 | **Amplifier** | AD8232 bioelectric signal amplifier |
 
 ### Data Flow
 
 ```
-Plant → AD8232 → GPIO (ADC) → 380 Hz timer → Moving Avg → mV conversion
+Plant → AD8232 → GPIO (ADC) → 380 Hz timer → EMA LP → Notch 50Hz → mV
   → Buffer (380 samples) → HTTP POST to Gateway /api/v1/ingest
 ```
 
@@ -80,6 +80,25 @@ Plant → AD8232 → GPIO (ADC) → 380 Hz timer → Moving Avg → mV conversio
 | **SSD1306 SCL** | I2C Clock | `IO12` |
 | **SSD1306 SDA** | I2C Data | `IO13` |
 | **Boot Button** | Active Low | `IO0` |
+
+### ⚡ Stromversorgung (WICHTIG)
+
+> **Jeder Sensor MUSS über ein eigenes USB-Netzteil versorgt werden — NICHT am Raspberry Pi USB!**
+
+Die gemeinsame Masse über den USB-Port des RPi erzeugt eine **50-Hz-Masseschleife**, die den AD8232-Verstärker in Sättigung treibt. Das Signal wird dadurch unbrauchbar.
+
+```
+✅ RICHTIG                          ❌ FALSCH
+
+Steckdose ─── Netzteil A ─── RPi    Steckdose ─── Netzteil ─── RPi
+Steckdose ─── Netzteil B ─── ESP32              └── USB ──── ESP32
+                                                    ↑ 50 Hz Ground Loop!
+```
+
+- **Sensor-Netzteil:** USB 5V / 500 mA (beliebig)
+- **RPi-Netzteil:** Offizielles Raspberry Pi Netzteil (5V / 3A)
+
+> Die Firmware v1.0.2 enthält einen digitalen 50-Hz-Notchfilter als Absicherung, aber die **physische Trennung bleibt zwingend** für saubere Signale.
 
 ---
 
