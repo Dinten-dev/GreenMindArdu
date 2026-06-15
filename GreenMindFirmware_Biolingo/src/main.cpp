@@ -117,6 +117,7 @@ static bool currentLeadOff = false;
 void startSetupMode();
 void startRuntimeMode();
 String getMacAddress();
+void saveConfig();
 bool discoverGateway();
 bool registerSensor();
 void streamReadings();
@@ -194,6 +195,18 @@ void setup() {
     pairingCode = prefs.getString("code", "");
     gatewayIP   = prefs.getString("gwip", "");
     prefs.end();
+
+    // Auto-provisioning: force WiFi credentials from build flags
+    #ifdef PROVISION_SSID
+    if (wifiSSID != PROVISION_SSID || wifiPass != PROVISION_PASS) {
+        Serial.println("[Biolingo] Auto-provisioning WiFi from build flags");
+        wifiSSID = PROVISION_SSID;
+        wifiPass = PROVISION_PASS;
+        gatewayIP = "";  // Clear cached GW so discovery runs fresh
+        pairingCode = "";
+        saveConfig();
+    }
+    #endif
 
     isProvisioned = (wifiSSID.length() > 0 && wifiPass.length() > 0);
 
