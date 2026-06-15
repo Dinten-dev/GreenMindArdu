@@ -604,9 +604,12 @@ void streamReadings() {
         bool isInvalid = false;
 
         // Lead-off detection (AD8232 LOD+ / LOD-)
+        // NOTE: LOD pins are informational only — the AD8232 is calibrated for
+        // low-impedance skin (EKG). Plant electrodes have much higher impedance
+        // and trigger false lead-off permanently. We record the flag for
+        // metadata but do NOT invalidate samples based on it.
         if (lp == HIGH || lm == HIGH) {
             flags |= FLAG_LEAD_OFF;
-            isInvalid = true;
             currentLeadOff = true;
         } else {
             currentLeadOff = false;

@@ -204,13 +204,9 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
     oled.print("TX:");
     oled.print(sendOk ? "OK" : "ERR");
 
-    // Live mV value, right-aligned
+    // Live mV value, right-aligned (always shown, even during lead-off)
     char mvBuf[12];
-    if (leadOff) {
-        snprintf(mvBuf, sizeof(mvBuf), "---.-mV");
-    } else {
-        snprintf(mvBuf, sizeof(mvBuf), "%.1fmV", currentMv);
-    }
+    snprintf(mvBuf, sizeof(mvBuf), "%.1fmV", currentMv);
     int mvLen = strlen(mvBuf);
     int mvX = OLED_WIDTH - mvLen * 6;  // 6px per char at textSize 1
     if (mvX < 42) mvX = 42;            // Don't overlap TX status
