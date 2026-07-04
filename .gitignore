@@ -28,3 +28,4 @@ Thumbs.db
 
 # ── Firmware binaries (track only source) ────────
 *.bin
+.DS_Store
