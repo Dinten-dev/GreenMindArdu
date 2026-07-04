@@ -80,13 +80,20 @@ String macAddress;
 
 bool isProvisioned = false;
 
-// ── Sampling Buffers ──────────────────────────
-static float   sampleBuffer[BATCH_SIZE];
-static uint8_t lpBuffer[BATCH_SIZE];
-static uint8_t lmBuffer[BATCH_SIZE];
-static uint8_t flagBuffer[BATCH_SIZE];
+// ── Sampling Buffers & Queues ─────────────────
+struct SensorBatch {
+    float   sampleBuffer[BATCH_SIZE];
+    uint8_t lpBuffer[BATCH_SIZE];
+    uint8_t lmBuffer[BATCH_SIZE];
+    uint8_t flagBuffer[BATCH_SIZE];
+};
 
+static SensorBatch   buffers[2];
+static int           currentBuffer    = 0;
 static int           bufferIndex      = 0;
+static QueueHandle_t uploadQueue      = NULL;
+static TaskHandle_t  uploadTaskHandle = NULL;
+
 static unsigned long lastSampleTime   = 0;
 static unsigned long lastWifiCheck    = 0;
 static float         lastValidValue   = -1.0f;
@@ -109,8 +116,8 @@ static unsigned long lastOtaCheck = 0;
 static const unsigned long OTA_CHECK_INTERVAL = 3600000;  // 1 hour
 
 // ── Streaming State (for display) ─────────────
-static bool lastSendOk    = false;
-static int  streamErrors  = 0;
+static volatile bool lastSendOk    = false;
+static volatile int  streamErrors  = 0;
 static bool currentLeadOff = false;
 
 // ── Forward Declarations ──────────────────────
@@ -121,7 +128,8 @@ void saveConfig();
 bool discoverGateway();
 bool registerSensor();
 void streamReadings();
-void sendBatch();
+void sendBatch(SensorBatch* batch);
+void uploadTaskCode(void *pvParameters);
 
 // ── HTML Captive Portal ───────────────────────
 static const char HTML_SETUP[] PROGMEM = R"rawliteral(
@@ -422,6 +430,18 @@ void startRuntimeMode() {
     // Initial display
     Display::showStreaming(macAddress, true, true, true, 0, false, 0.0f);
 
+    // Create FreeRTOS task for HTTP uploads
+    uploadQueue = xQueueCreate(2, sizeof(SensorBatch*));
+    xTaskCreatePinnedToCore(
+        uploadTaskCode,
+        "UploadTask",
+        8192,
+        NULL,
+        1,
+        &uploadTaskHandle,
+        0
+    );
+
     Serial.printf("[Biolingo] Streaming started (v%s, OTA, AD8232)\n", FIRMWARE_VERSION);
 }
 
@@ -661,20 +681,27 @@ void streamReadings() {
         }
 
         // 4. Store in batch buffer
-        sampleBuffer[bufferIndex] = filteredMv;
-        lpBuffer[bufferIndex]     = lp;
-        lmBuffer[bufferIndex]     = lm;
-        flagBuffer[bufferIndex]   = flags;
+        buffers[currentBuffer].sampleBuffer[bufferIndex] = filteredMv;
+        buffers[currentBuffer].lpBuffer[bufferIndex]     = lp;
+        buffers[currentBuffer].lmBuffer[bufferIndex]     = lm;
+        buffers[currentBuffer].flagBuffer[bufferIndex]   = flags;
         bufferIndex++;
 
         // 5. Send batch when full (380 samples = 1 second)
         if (bufferIndex >= BATCH_SIZE) {
             // Calculate batch mean for display
             float batchMean = 0.0f;
-            for (int i = 0; i < BATCH_SIZE; i++) batchMean += sampleBuffer[i];
+            for (int i = 0; i < BATCH_SIZE; i++) batchMean += buffers[currentBuffer].sampleBuffer[i];
             batchMean /= BATCH_SIZE;
 
-            sendBatch();
+            SensorBatch* readyBatch = &buffers[currentBuffer];
+            if (uploadQueue != NULL) {
+                if (xQueueSend(uploadQueue, &readyBatch, 0) != pdTRUE) {
+                    Serial.println("[Biolingo] Upload queue full! Dropping batch.");
+                }
+            }
+
+            currentBuffer = (currentBuffer + 1) % 2;
             bufferIndex = 0;
 
             // Update display after each batch (once per second)
@@ -682,11 +709,27 @@ void streamReadings() {
             Display::showStreaming(macAddress, wifiOk, true,
                                   lastSendOk, streamErrors, currentLeadOff,
                                   batchMean);
+
+            if (streamErrors > 20) {
+                Serial.println("[Biolingo] Too many errors, rebooting");
+                Display::showError("Too many TX", "errors! Reboot");
+                delay(2000);
+                ESP.restart();
+            }
         }
     }
 }
 
-void sendBatch() {
+void uploadTaskCode(void *pvParameters) {
+    SensorBatch* batchToUpload;
+    for (;;) {
+        if (xQueueReceive(uploadQueue, &batchToUpload, portMAX_DELAY) == pdTRUE) {
+            sendBatch(batchToUpload);
+        }
+    }
+}
+
+void sendBatch(SensorBatch* batch) {
     // Build JSON payload (standard production format for /api/v1/ingest)
     JsonDocument doc;
     doc["mac_address"] = macAddress;
@@ -696,7 +739,7 @@ void sendBatch() {
     for (int i = 0; i < BATCH_SIZE; i++) {
         JsonObject r = readings.add<JsonObject>();
         r["kind"]  = "bio_signal";
-        r["value"] = serialized(String(sampleBuffer[i], 1));
+        r["value"] = serialized(String(batch->sampleBuffer[i], 1));
         r["unit"]  = "mV";
     }
 
@@ -721,11 +764,5 @@ void sendBatch() {
         streamErrors++;
         lastSendOk = false;
         Serial.printf("[Biolingo] Stream error: HTTP %d (count: %d)\n", code, streamErrors);
-        if (streamErrors > 20) {
-            Serial.println("[Biolingo] Too many errors, rebooting");
-            Display::showError("Too many TX", "errors! Reboot");
-            delay(2000);
-            ESP.restart();
-        }
     }
 }
