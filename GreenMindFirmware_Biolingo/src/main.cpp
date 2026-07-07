@@ -32,8 +32,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
+#include <WiFiProv.h>
 #include <HTTPClient.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>
@@ -68,8 +67,6 @@ static const int   RECOVERY_SAMPLES_COUNT  = 38;       // ~100 ms recovery windo
 
 // ── Globals ───────────────────────────────────
 Preferences prefs;
-WebServer   server(80);
-DNSServer   dnsServer;
 WiFiUDP     udp;
 
 String wifiSSID;
@@ -96,6 +93,7 @@ static TaskHandle_t  uploadTaskHandle = NULL;
 
 static unsigned long lastSampleTime   = 0;
 static unsigned long lastWifiCheck    = 0;
+static unsigned long setupModeStartTime = 0;
 static float         lastValidValue   = -1.0f;
 static int           recoveryCounter  = 0;
 
@@ -131,41 +129,16 @@ void streamReadings();
 void sendBatch(SensorBatch* batch);
 void uploadTaskCode(void *pvParameters);
 
-// ── HTML Captive Portal ───────────────────────
-static const char HTML_SETUP[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sensor Setup</title>
-<style>
-body{font-family:-apple-system,sans-serif;background:#f0fdf4;margin:0;padding:20px;color:#1f2937}
-.card{background:#fff;padding:25px;border-radius:20px;max-width:400px;margin:40px auto;box-shadow:0 4px 6px rgba(0,0,0,.05)}
-h2{color:#10b981;margin-top:0}
-label{font-size:13px;font-weight:700;color:#6b7280;display:block;margin-bottom:5px}
-input{width:100%;padding:12px;margin-bottom:15px;border:1px solid #e5e7eb;border-radius:10px;box-sizing:border-box;font-size:16px}
-button{width:100%;padding:14px;background:#10b981;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer}
-.ver{text-align:center;font-size:11px;color:#9ca3af;margin-top:15px}
-</style></head><body>
-<div class="card">
-<h2>GreenMind Sensor</h2>
-<p>Verbinde den Sensor mit dem WLAN.</p>
-<form method="POST" action="/provision">
-<label>WLAN Name (SSID)</label>
-<input type="text" name="ssid" required placeholder="Mein Heimnetzwerk">
-<label>WLAN Passwort</label>
-<input type="password" name="password" required>
-<label>Pairing Code (vom Dashboard)</label>
-<input type="text" name="code" required placeholder="ABC123"
-       pattern="[a-zA-Z0-9]+" maxlength="6" style="text-transform:uppercase">
-<button type="submit">Jetzt Speichern</button>
-</form>
-<p class="ver">Biolingo v22 · FW v)rawliteral" FIRMWARE_VERSION R"rawliteral( · OTA</p>
-</div></body></html>
-)rawliteral";
-
-static const char HTML_SUCCESS[] PROGMEM =
-  "<!DOCTYPE html><html><body style='font-family:sans-serif;text-align:center;padding:60px'>"
-  "<h2 style='color:#10b981'>&#10003; Erfolgreich gespeichert!</h2>"
-  "<p>Sensor startet neu&hellip;</p></body></html>";
+// ── Helpers für BLE Provisioning ──────────────
+String generatePairingCode() {
+    String code = "";
+    for (int i = 0; i < 6; i++) {
+        int r = random(0, 36);
+        if (r < 10) code += String(r);
+        else code += String((char)('A' + r - 10));
+    }
+    return code;
+}
 
 // ══════════════════════════════════════════════
 //  SETUP & LOOP
@@ -234,8 +207,19 @@ void setup() {
 
 void loop() {
     if (!isProvisioned) {
-        dnsServer.processNextRequest();
-        server.handleClient();
+        if (WiFi.status() == WL_CONNECTED && wifiSSID.length() == 0) {
+            wifiSSID = WiFi.SSID();
+            wifiPass = WiFi.psk();
+            Serial.printf("[Biolingo] Provisioned successfully! SSID: %s\n", wifiSSID.c_str());
+            saveConfig();
+            delay(1000);
+            ESP.restart();
+        }
+        if (millis() - setupModeStartTime > 300000) {
+            Serial.println("[Biolingo] 5 min timeout. Rebooting...");
+            ESP.restart();
+        }
+        delay(100);
     } else {
         streamReadings();
 
@@ -288,75 +272,23 @@ void factoryReset() {
 }
 
 // ══════════════════════════════════════════════
-//  SETUP MODE (Captive Portal)
+//  SETUP MODE (BLE Provisioning)
 // ══════════════════════════════════════════════
 
-void handleRoot() {
-    server.send_P(200, "text/html", HTML_SETUP);
-}
-
-void handleProvision() {
-    wifiSSID    = server.arg("ssid");
-    wifiPass    = server.arg("password");
-    pairingCode = server.arg("code");
-    pairingCode.toUpperCase();
-    pairingCode.trim();
-
-    Serial.printf("[Biolingo] Provisioned: SSID=%s  Code=%s\n",
-                  wifiSSID.c_str(), pairingCode.c_str());
-    saveConfig();
-
-    server.send_P(200, "text/html", HTML_SUCCESS);
-    delay(1500);
-    ESP.restart();
-}
-
-void handleCaptiveRedirect() {
-    server.sendHeader("Location", "http://192.168.4.1/");
-    server.send(302, "text/plain", "");
-}
-
 void startSetupMode() {
-    Serial.println("[Biolingo] Starting Setup Mode (AP)");
+    Serial.println("[Biolingo] Starting Setup Mode (BLE Provisioning)");
 
-    // Build AP name from last 4 hex chars of MAC
     String suffix = macAddress.substring(macAddress.length() - 5);
     suffix.replace(":", "");
-    String apName = "GreenMind-Sensor-" + suffix;
+    String bleName = "GM-" + suffix;
 
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(apName.c_str());
-    delay(200);
+    String generatedCode = generatePairingCode();
+    Serial.printf("[Biolingo] BLE Name: %s  Code: %s\n", bleName.c_str(), generatedCode.c_str());
 
-    Serial.printf("[Biolingo] AP: %s  IP: %s\n",
-                  apName.c_str(), WiFi.softAPIP().toString().c_str());
-
-    // Display setup screen
-    Display::showSetup(apName);
-
-    // DNS: redirect ALL queries to our IP (captive portal trigger)
-    dnsServer.start(53, "*", WiFi.softAPIP());
-
-    // HTTP routes
-    server.on("/",            HTTP_GET,  handleRoot);
-    server.on("/setup",       HTTP_GET,  handleRoot);
-    server.on("/provision",   HTTP_POST, handleProvision);
-    server.on("/provision",   HTTP_DELETE, []() {
-        server.send(200); factoryReset();
-    });
-
-    // Captive portal detection endpoints
-    server.on("/hotspot-detect.html", HTTP_GET, handleCaptiveRedirect);
-    server.on("/generate_204",        HTTP_GET, handleCaptiveRedirect);
-    server.on("/gen_204",             HTTP_GET, handleCaptiveRedirect);
-    server.on("/connecttest.txt",     HTTP_GET, handleCaptiveRedirect);
-    server.on("/ncsi.txt",            HTTP_GET, handleCaptiveRedirect);
-    server.on("/redirect",            HTTP_GET, handleCaptiveRedirect);
-    server.on("/canonical.html",      HTTP_GET, handleCaptiveRedirect);
-    server.onNotFound(handleCaptiveRedirect);
-
-    server.begin();
-    Serial.println("[Biolingo] Setup server ready");
+    Display::showBleProvisioning(bleName, generatedCode);
+    
+    setupModeStartTime = millis();
+    WiFiProv.beginProvision(WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BTDM, WIFI_PROV_SECURITY_1, generatedCode.c_str(), bleName.c_str());
 }
 
 // ══════════════════════════════════════════════
@@ -414,18 +346,7 @@ void startRuntimeMode() {
         saveConfig();
     }
 
-    // Health + reset endpoints
-    server.on("/", HTTP_DELETE, []() {
-        server.send(200, "text/plain", "OK");
-        delay(500);
-        factoryReset();
-    });
-    server.on("/health", HTTP_GET, []() {
-        String json = "{\"status\":\"ok\",\"version\":\"" + String(FIRMWARE_VERSION)
-                     + "\",\"board\":\"BIOLINGO_V22\",\"ota\":true}";
-        server.send(200, "application/json", json);
-    });
-    server.begin();
+    // HTTP endpoints removed for Phase 2
 
     // Initial display
     Display::showStreaming(macAddress, true, true, true, 0, false, 0.0f);
@@ -599,7 +520,6 @@ float applyNotch(float x) {
 
 void streamReadings() {
     // Handle incoming requests (DELETE, health) non-blocking
-    server.handleClient();
 
     // WiFi watchdog (every 5 seconds)
     if (millis() - lastWifiCheck > 5000) {

@@ -25,8 +25,8 @@ bool init();
 /// Boot screen: firmware version + MAC address.
 void showBoot(const String& mac);
 
-/// Setup mode: AP name + portal IP.
-void showSetup(const String& apName);
+/// Setup mode: BLE Provisioning
+void showBleProvisioning(const String& name, const String& code);
 
 /// WiFi connecting screen.
 void showConnecting(const String& ssid);

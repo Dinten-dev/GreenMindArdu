@@ -86,23 +86,23 @@ void Display::showBoot(const String& mac) {
     oled.display();
 }
 
-void Display::showSetup(const String& apName) {
+void Display::showBleProvisioning(const String& name, const String& code) {
     if (!displayReady) return;
     clearScreen();
 
     oled.setTextSize(2);
-    centerText("WiFi", 0);
+    centerText("BLE", 0);
     centerText("Setup", 16);
 
     oled.setTextSize(1);
     drawSeparator(34);
 
     oled.setCursor(0, 38);
-    oled.print("AP: ");
-    oled.print(apName);
+    oled.print(name);
 
     oled.setCursor(0, 50);
-    oled.print("Open: 192.168.4.1");
+    oled.print("Code: ");
+    oled.print(code);
 
     oled.display();
 }
