@@ -659,7 +659,7 @@ void sendBatch(SensorBatch* batch) {
     for (int i = 0; i < BATCH_SIZE; i++) {
         JsonObject r = readings.add<JsonObject>();
         r["kind"]  = "bio_signal";
-        r["value"] = serialized(String(batch->sampleBuffer[i], 1));
+        r["value"] = round(batch->sampleBuffer[i] * 10.0f) / 10.0f;
         r["unit"]  = "mV";
     }
 
