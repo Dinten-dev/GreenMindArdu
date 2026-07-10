@@ -37,6 +37,7 @@
 #include <WiFiUdp.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
+#include <esp_wifi.h>
 #include "ota_client.h"
 #include "display.h"
 
@@ -301,6 +302,8 @@ void startRuntimeMode() {
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
+    WiFi.setSleep(false);
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
     int retries = 30;
     while (WiFi.status() != WL_CONNECTED && retries-- > 0) {
@@ -528,6 +531,8 @@ void streamReadings() {
             Serial.println("[Biolingo] WiFi lost, reconnecting...");
             Display::showError("WiFi lost!", "Reconnecting...");
             WiFi.reconnect();
+            WiFi.setSleep(false);
+            esp_wifi_set_ps(WIFI_PS_NONE);
             int retries = 15;
             while (WiFi.status() != WL_CONNECTED && retries-- > 0) delay(1000);
             if (WiFi.status() != WL_CONNECTED) {
@@ -630,7 +635,7 @@ void streamReadings() {
                                   lastSendOk, streamErrors, currentLeadOff,
                                   batchMean);
 
-            if (streamErrors > 20) {
+            if (streamErrors > 100) {
                 Serial.println("[Biolingo] Too many errors, rebooting");
                 Display::showError("Too many TX", "errors! Reboot");
                 delay(2000);
