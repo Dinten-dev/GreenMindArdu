@@ -663,6 +663,12 @@ void sendBatch(SensorBatch* batch) {
     JsonArray readings = doc["readings"].to<JsonArray>();
     for (int i = 0; i < BATCH_SIZE; i++) {
         JsonObject r = readings.add<JsonObject>();
+        if (r.isNull()) {
+            Serial.println("[Biolingo] JSON allocation failed! Rebooting...");
+            Display::showError("JSON OOM", "Rebooting...");
+            delay(2000);
+            ESP.restart();
+        }
         r["kind"]  = "bio_signal";
         r["value"] = round(batch->sampleBuffer[i] * 10.0f) / 10.0f;
         r["unit"]  = "mV";
