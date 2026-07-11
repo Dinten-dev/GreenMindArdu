@@ -656,7 +656,8 @@ void uploadTaskCode(void *pvParameters) {
 
 void sendBatch(SensorBatch* batch) {
     // Build JSON payload (standard production format for /api/v1/ingest)
-    JsonDocument doc;
+    static JsonDocument doc;
+    doc.clear();
     doc["mac_address"] = macAddress;
     doc["sample_rate"] = SAMPLE_RATE;
 

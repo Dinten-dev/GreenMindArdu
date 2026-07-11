@@ -19,14 +19,14 @@ headers = {
 }
 
 data = {
-    "version": "1.0.7",
+    "version": "1.0.8",
     "board_type": "BIOLINGO_V22",
     "hardware_revision": "v22",
     "mandatory": "true",
     "changelog": "Fix heap fragmentation OOM crash causing empty JSON arrays to be sent"
 }
 
-print(f"Uploading firmware 1.0.7 to {url}...")
+print(f"Uploading firmware 1.0.8 to {url}...")
 
 with open(FIRMWARE_BIN, "rb") as f:
     files = {"file": ("firmware.bin", f, "application/octet-stream")}
