@@ -33,9 +33,8 @@ echo "✅ Firmware geflasht"
 
 # 2. Read MAC from serial output (wait for boot message)
 echo "📖 Lese MAC-Adresse..."
-sleep 2  # Wait for reboot
 
-MAC=$($PIO device monitor --port "$PORT" --baud 115200 --filter direct 2>/dev/null | timeout 8 grep -m1 "\[Biolingo\] MAC:" | sed 's/.*MAC: \([0-9A-F:]*\).*/\1/')
+MAC=$(/opt/anaconda3/bin/python read_mac.py "$PORT" 2>/dev/null || true)
 
 if [ -z "$MAC" ]; then
     echo "⚠️  MAC konnte nicht automatisch gelesen werden."

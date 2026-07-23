@@ -184,19 +184,19 @@ install_toolchains() {
     info "Configuring ESP32 board support..."
     arduino-cli config init --overwrite 2>/dev/null || true
     arduino-cli config add board_manager.additional_urls "${ESP32_CORE_URL}" 2>/dev/null || true
-    arduino-cli core update-index --quiet 2>/dev/null
+    arduino-cli core update-index 2>/dev/null
 
     if arduino-cli core list 2>/dev/null | grep -q "esp32:esp32"; then
         info "ESP32 core already installed, updating..."
-        arduino-cli core upgrade esp32:esp32 --quiet 2>/dev/null || true
+        arduino-cli core upgrade esp32:esp32 2>/dev/null || true
     else
         info "Installing ESP32 core (this may take a few minutes on first run)..."
-        arduino-cli core install esp32:esp32 --quiet
+        arduino-cli core install esp32:esp32
     fi
 
     # Install required Arduino libraries
     info "Installing Arduino libraries..."
-    arduino-cli lib install "ArduinoJson@^7.0.0" --quiet 2>/dev/null || true
+    arduino-cli lib install "ArduinoJson@^7.0.0" 2>/dev/null || true
 
     success "Arduino toolchain ready"
 }
