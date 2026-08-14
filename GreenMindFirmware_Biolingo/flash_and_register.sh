@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PIO="/opt/anaconda3/bin/pio"
+PIO="${HOME}/.platformio/penv/bin/pio"
 DEPLOY_KEY="$(cd "$SCRIPT_DIR/../../GreenMindDB/dev-tools" && pwd)/greenmind_deploy_key"
 SERVER="traver@188.245.247.156"
 ZONE_ID="c18595ab-f758-4199-aee5-cf2302a5e6f4"  # Gery Gewächshaus
@@ -21,7 +21,7 @@ fi
 echo "📡 Sensor gefunden auf: $PORT"
 
 # 1. Flash firmware
-echo "🔧 Flashe v1.0.4 mit Auto-Provisioning..."
+echo "🔧 Flashe Firmware mit Auto-Provisioning..."
 cd "$SCRIPT_DIR"
 $PIO run --target upload --upload-port "$PORT" 2>&1 | tail -5
 
@@ -34,7 +34,7 @@ echo "✅ Firmware geflasht"
 # 2. Read MAC from serial output (wait for boot message)
 echo "📖 Lese MAC-Adresse..."
 
-MAC=$(/opt/anaconda3/bin/python read_mac.py "$PORT" 2>/dev/null || true)
+MAC=$("${HOME}/.platformio/penv/bin/python" read_mac.py "$PORT" 2>/dev/null || true)
 
 if [ -z "$MAC" ]; then
     echo "⚠️  MAC konnte nicht automatisch gelesen werden."
@@ -55,20 +55,17 @@ echo "☁️  Registriere in Produktion..."
 ssh -i "$DEPLOY_KEY" -o StrictHostKeyChecking=no "$SERVER" "
 cd /home/traver/greenmind-prod
 COMPOSE_PROJECT_NAME=greenminddb docker compose -f docker-compose.prod.yml exec -T postgres psql -U admin -d plantdb -c \"
-INSERT INTO sensor (id, name, mac_address, gateway_id, status, created_at, updated_at)
+INSERT INTO sensor (id, name, mac_address, gateway_id, status)
 VALUES (
     gen_random_uuid(),
     '${SENSOR_NAME}',
     '${MAC}',
     '${GATEWAY_ID}',
-    'online',
-    NOW(),
-    NOW()
+    'online'
 )
 ON CONFLICT (mac_address) DO UPDATE SET
     gateway_id = '${GATEWAY_ID}',
-    status = 'online',
-    updated_at = NOW();
+    status = 'online';
 \"
 "
 
