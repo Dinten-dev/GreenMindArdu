@@ -4,15 +4,15 @@
 #include <Arduino.h>
 
 class GreenMindOTA {
-public:
+  public:
     /// Check gateway for available firmware update and apply if found.
     static void checkAndUpdate(const String& gatewayIp);
 
     /// Report update status back to gateway (which forwards to cloud).
-    static void reportStatus(const String& gatewayIp, const String& releaseId,
-                             const char* status, const char* errorMessage = nullptr);
+    static void reportStatus(const String& gatewayIp, const String& releaseId, const char* status,
+                             const char* errorMessage = nullptr);
 
-private:
+  private:
     static bool performDownload(const String& fullUrl, const String& expectedSha256);
 };
 

@@ -5,14 +5,13 @@
  * Board:    Biolingo v22 (KiCad Rev v22)
  *
  * Features:
- *   - Captive portal setup (WiFi + pairing code provisioning)
- *   - 380 Hz ADC sampling with 3-sample moving average
+ *   - BLE setup for WiFi provisioning
+ *   - 380 Hz ADC sampling with low-pass and 50 Hz notch filtering
  *   - AD8232 lead-off detection + artifact flagging
  *   - Batch POST to gateway (/api/v1/ingest, 380 samples/s)
  *   - Gateway discovery: cached IP → UDP broadcast → subnet scan
  *   - OTA firmware updates via local Raspberry Pi gateway
  *   - SSD1306 OLED status display (MAC, WiFi, GW, TX, lead-off)
- *   - Factory reset via HTTP DELETE from gateway
  *
  * Pin Mapping (Biolingo v22 schematic):
  *   IO4  → ADC1_CH3  (AD8232 filtered output)
@@ -27,7 +26,6 @@
  * Gateway API:
  *   POST   /api/v1/ingest            (batch readings)
  *   POST   /api/v1/sensors/register  (pairing)
- *   DELETE /                          (factory reset from gateway)
  */
 
 #include <Arduino.h>
@@ -42,33 +40,34 @@
 #include "display.h"
 
 // ── Pin Configuration (Biolingo v22) ──────────
-static const int ADC_PIN      = 4;    // IO4, ADC1_CH3
-static const int LO_PLUS_PIN  = 5;    // IO5, AD8232 LOD+
-static const int LO_MINUS_PIN = 6;    // IO6, AD8232 LOD-
+static const int ADC_PIN = 4;      // IO4, ADC1_CH3
+static const int LO_PLUS_PIN = 5;  // IO5, AD8232 LOD+
+static const int LO_MINUS_PIN = 6; // IO6, AD8232 LOD-
 
 // ── ADC & Sampling ───────────────────────────
-static const int   SAMPLE_RATE        = 380;
-static const int   SAMPLE_INTERVAL_US = 1000000 / SAMPLE_RATE;  // ~2632 µs
-static const int   BATCH_SIZE         = 380;                     // 1 second
-static const float ADC_VOLTAGE_REF    = 3.3f;
+static const int SAMPLE_RATE = 380;
+static const int SAMPLE_INTERVAL_US = 1000000 / SAMPLE_RATE; // ~2632 µs
+static const uint32_t MAX_SAMPLE_LAG_INTERVALS = 2;
+static const int BATCH_SIZE = 380; // 1 second
+static const float ADC_VOLTAGE_REF = 3.3f;
 
 // ── AD8232 Artifact Detection Thresholds ──────
-static const float RAIL_HIGH_THRESHOLD     = 3200.0f;  // mV
-static const float RAIL_LOW_THRESHOLD      = 100.0f;   // mV
-static const float JUMP_THRESHOLD          = 500.0f;   // mV
-static const int   RECOVERY_SAMPLES_COUNT  = 38;       // ~100 ms recovery window
+static const float RAIL_HIGH_THRESHOLD = 3200.0f; // mV
+static const float RAIL_LOW_THRESHOLD = 100.0f;   // mV
+static const float JUMP_THRESHOLD = 500.0f;       // mV
+static const int RECOVERY_SAMPLES_COUNT = 38;     // ~100 ms recovery window
 
 // ── Artifact Flag Bitmask ─────────────────────
-#define FLAG_VALID        0
-#define FLAG_LEAD_OFF     1
-#define FLAG_RAIL_HIGH    2
-#define FLAG_RAIL_LOW     4
-#define FLAG_JUMP         8
-#define FLAG_RECOVERY    16
+#define FLAG_VALID 0
+#define FLAG_LEAD_OFF 1
+#define FLAG_RAIL_HIGH 2
+#define FLAG_RAIL_LOW 4
+#define FLAG_JUMP 8
+#define FLAG_RECOVERY 16
 
 // ── Globals ───────────────────────────────────
 Preferences prefs;
-WiFiUDP     udp;
+WiFiUDP udp;
 
 String wifiSSID;
 String wifiPass;
@@ -80,43 +79,51 @@ bool isProvisioned = false;
 
 // ── Sampling Buffers & Queues ─────────────────
 struct SensorBatch {
-    float   sampleBuffer[BATCH_SIZE];
+    float sampleBuffer[BATCH_SIZE];
     uint8_t lpBuffer[BATCH_SIZE];
     uint8_t lmBuffer[BATCH_SIZE];
     uint8_t flagBuffer[BATCH_SIZE];
 };
 
-static SensorBatch   buffers[2];
-static int           currentBuffer    = 0;
-static int           bufferIndex      = 0;
-static QueueHandle_t uploadQueue      = NULL;
-static TaskHandle_t  uploadTaskHandle = NULL;
+// A batch has exactly one owner at a time: the sampler, the upload queue/task,
+// or the free queue. Queueing indices by value prevents the sampler from
+// overwriting a buffer while the HTTP task still serializes it.
+static const uint8_t BATCH_POOL_SIZE = 3;
+static const uint8_t INVALID_BATCH_INDEX = UINT8_MAX;
+static SensorBatch batchPool[BATCH_POOL_SIZE];
+static uint8_t activeBatchIndex = INVALID_BATCH_INDEX;
+static int bufferIndex = 0;
+static QueueHandle_t freeBatchQueue = NULL;
+static QueueHandle_t uploadQueue = NULL;
+static TaskHandle_t uploadTaskHandle = NULL;
+static volatile uint32_t droppedSampleCount = 0;
+static volatile uint32_t droppedBatchCount = 0;
 
-static unsigned long lastSampleTime   = 0;
-static unsigned long lastWifiCheck    = 0;
+static unsigned long lastSampleTime = 0;
+static unsigned long lastWifiCheck = 0;
 static unsigned long setupModeStartTime = 0;
-static float         lastValidValue   = -1.0f;
-static int           recoveryCounter  = 0;
+static float lastValidValue = -1.0f;
+static int recoveryCounter = 0;
 
 // ── Signal Filter ─────────────────────────────
-static const float LP_ALPHA      = 0.25f;   // Gloor ~20 Hz IIR lowpass (DC-preserving)
-static float       lpFilterState = 0.0f;    // first-stage 50 Hz attenuation
-static bool        lpFilterInit  = false;
+static const float LP_ALPHA = 0.25f; // Gloor ~20 Hz IIR lowpass (DC-preserving)
+static float lpFilterState = 0.0f;   // first-stage 50 Hz attenuation
+static bool lpFilterInit = false;
 
 // 50 Hz mains notch (biquad, second stage, applied after the lowpass)
-static const float NOTCH_FREQ = 50.0f;      // mains frequency (Hz)
-static const float NOTCH_Q    = 30.0f;      // notch sharpness (higher = narrower)
-static float n_b0, n_b1, n_b2, n_a1, n_a2;  // normalized biquad coefficients
-static float n_z1 = 0.0f, n_z2 = 0.0f;      // transposed-DF2 state
-static bool  notchReady = false;
+static const float NOTCH_FREQ = 50.0f;     // mains frequency (Hz)
+static const float NOTCH_Q = 30.0f;        // notch sharpness (higher = narrower)
+static float n_b0, n_b1, n_b2, n_a1, n_a2; // normalized biquad coefficients
+static float n_z1 = 0.0f, n_z2 = 0.0f;     // transposed-DF2 state
+static bool notchReady = false;
 
 // ── OTA Timing ────────────────────────────────
 static unsigned long lastOtaCheck = 0;
-static const unsigned long OTA_CHECK_INTERVAL = 3600000;  // 1 hour
+static const unsigned long OTA_CHECK_INTERVAL = 3600000; // 1 hour
 
 // ── Streaming State (for display) ─────────────
-static volatile bool lastSendOk    = false;
-static volatile int  streamErrors  = 0;
+static volatile bool lastSendOk = false;
+static volatile int streamErrors = 0;
 static bool currentLeadOff = false;
 
 // ── Forward Declarations ──────────────────────
@@ -127,16 +134,17 @@ void saveConfig();
 bool discoverGateway();
 bool registerSensor();
 void streamReadings();
-void sendBatch(SensorBatch* batch);
-void uploadTaskCode(void *pvParameters);
+bool acquireFreeBatch();
+void recordDroppedSamples(uint32_t count, const char* reason);
+void sendBatch(const SensorBatch& batch);
+void uploadTaskCode(void* pvParameters);
 
 // ── Helpers für BLE Provisioning ──────────────
 String generatePairingCode() {
+    static const char alphabet[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     String code = "";
     for (int i = 0; i < 6; i++) {
-        int r = random(0, 36);
-        if (r < 10) code += String(r);
-        else code += String((char)('A' + r - 10));
+        code += alphabet[esp_random() % (sizeof(alphabet) - 1)];
     }
     return code;
 }
@@ -172,32 +180,22 @@ void setup() {
 
     // Load config from NVS
     prefs.begin("gm", false);
-    wifiSSID    = prefs.getString("ssid", "");
-    wifiPass    = prefs.getString("pass", "");
+    wifiSSID = prefs.getString("ssid", "");
+    wifiPass = prefs.getString("pass", "");
     pairingCode = prefs.getString("code", "");
-    gatewayIP   = prefs.getString("gwip", "");
+    gatewayIP = prefs.getString("gwip", "");
     prefs.end();
 
-    // Auto-provisioning: force WiFi credentials from build flags
-    #ifdef PROVISION_SSID
-    if (wifiSSID != PROVISION_SSID || wifiPass != PROVISION_PASS) {
-        Serial.println("[Biolingo] Auto-provisioning WiFi from build flags");
-        wifiSSID = PROVISION_SSID;
-        wifiPass = PROVISION_PASS;
-        gatewayIP = "";  // Clear cached GW so discovery runs fresh
-        pairingCode = "";
-        saveConfig();
-    }
-    #endif
+    // Open Wi-Fi networks legitimately have an empty passphrase. A persisted
+    // SSID is the provisioning marker; WiFi.begin handles open networks.
+    isProvisioned = (wifiSSID.length() > 0);
 
-    isProvisioned = (wifiSSID.length() > 0 && wifiPass.length() > 0);
+    Serial.printf("[Biolingo] MAC: %s  Provisioned: %s\n", macAddress.c_str(),
+                  isProvisioned ? "yes" : "no");
+    Serial.printf("[Biolingo] Cached GW: '%s'  Pairing: %s\n", gatewayIP.c_str(),
+                  pairingCode.length() > 0 ? "pending" : "none");
 
-    Serial.printf("[Biolingo] MAC: %s  Provisioned: %s\n",
-                  macAddress.c_str(), isProvisioned ? "yes" : "no");
-    Serial.printf("[Biolingo] Cached GW: '%s'  Code: '%s'\n",
-                  gatewayIP.c_str(), pairingCode.c_str());
-
-    delay(1500);  // Let user see boot screen
+    delay(1500); // Let user see boot screen
 
     if (isProvisioned) {
         startRuntimeMode();
@@ -242,8 +240,8 @@ String getMacAddress() {
     uint8_t mac[6];
     WiFi.macAddress(mac);
     char buf[18];
-    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+             mac[4], mac[5]);
     return String(buf);
 }
 
@@ -284,12 +282,13 @@ void startSetupMode() {
     String bleName = "GM-" + suffix;
 
     String generatedCode = generatePairingCode();
-    Serial.printf("[Biolingo] BLE Name: %s  Code: %s\n", bleName.c_str(), generatedCode.c_str());
+    Serial.printf("[Biolingo] BLE provisioning name: %s\n", bleName.c_str());
 
     Display::showBleProvisioning(bleName, generatedCode);
-    
+
     setupModeStartTime = millis();
-    WiFiProv.beginProvision(WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BTDM, WIFI_PROV_SECURITY_1, generatedCode.c_str(), bleName.c_str());
+    WiFiProv.beginProvision(WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BTDM,
+                            WIFI_PROV_SECURITY_1, generatedCode.c_str(), bleName.c_str());
 }
 
 // ══════════════════════════════════════════════
@@ -349,23 +348,44 @@ void startRuntimeMode() {
         saveConfig();
     }
 
-    // HTTP endpoints removed for Phase 2
-
     // Initial display
     Display::showStreaming(macAddress, true, true, true, 0, false, 0.0f);
 
-    // Create FreeRTOS task for HTTP uploads
-    uploadQueue = xQueueCreate(2, sizeof(SensorBatch*));
-    xTaskCreatePinnedToCore(
-        uploadTaskCode,
-        "UploadTask",
-        8192,
-        NULL,
-        1,
-        &uploadTaskHandle,
-        0
-    );
+    // Create a fixed batch pool and transfer ownership with queue indices.
+    freeBatchQueue = xQueueCreate(BATCH_POOL_SIZE, sizeof(uint8_t));
+    uploadQueue = xQueueCreate(BATCH_POOL_SIZE, sizeof(uint8_t));
+    if (freeBatchQueue == NULL || uploadQueue == NULL) {
+        Serial.println("[Biolingo] Failed to allocate batch queues. Rebooting...");
+        Display::showError("Queue alloc", "failed! Reboot");
+        delay(2000);
+        ESP.restart();
+    }
 
+    for (uint8_t i = 0; i < BATCH_POOL_SIZE; ++i) {
+        if (xQueueSend(freeBatchQueue, &i, 0) != pdTRUE) {
+            Serial.println("[Biolingo] Failed to initialize batch pool. Rebooting...");
+            delay(2000);
+            ESP.restart();
+        }
+    }
+
+    if (!acquireFreeBatch()) {
+        Serial.println("[Biolingo] No initial batch buffer available. Rebooting...");
+        delay(2000);
+        ESP.restart();
+    }
+
+    BaseType_t taskResult =
+        xTaskCreatePinnedToCore(uploadTaskCode, "UploadTask", 8192, NULL, 1, &uploadTaskHandle, 0);
+    if (taskResult != pdPASS) {
+        Serial.println("[Biolingo] Failed to start upload task. Rebooting...");
+        Display::showError("Upload task", "failed! Reboot");
+        delay(2000);
+        ESP.restart();
+    }
+
+    // Sampling starts here, after all intentionally blocking boot work.
+    lastSampleTime = micros();
     Serial.printf("[Biolingo] Streaming started (v%s, OTA, AD8232)\n", FIRMWARE_VERSION);
 }
 
@@ -391,7 +411,8 @@ bool discoverGateway() {
     if (gatewayIP.length() > 0) {
         Serial.printf("[Biolingo] Trying cached: %s\n", gatewayIP.c_str());
         Display::showSearchGW("Cached");
-        if (checkGatewayHealth(gatewayIP)) return true;
+        if (checkGatewayHealth(gatewayIP))
+            return true;
         gatewayIP = "";
     }
 
@@ -417,8 +438,8 @@ bool discoverGateway() {
                 if (msg.startsWith("GATEWAY_IP:")) {
                     String sourceIP = disc.remoteIP().toString();
                     String payloadIP = msg.substring(11);
-                    Serial.printf("[Biolingo] UDP reply: payload=%s source=%s\n",
-                                  payloadIP.c_str(), sourceIP.c_str());
+                    Serial.printf("[Biolingo] UDP reply: payload=%s source=%s\n", payloadIP.c_str(),
+                                  sourceIP.c_str());
                     disc.stop();
                     if (checkGatewayHealth(sourceIP)) {
                         gatewayIP = sourceIP;
@@ -443,7 +464,8 @@ bool discoverGateway() {
     IPAddress myIP = WiFi.localIP();
     for (int host = 1; host < 255; host++) {
         IPAddress candidate(myIP[0], myIP[1], myIP[2], host);
-        if (candidate == myIP) continue;
+        if (candidate == myIP)
+            continue;
         yield();
 
         WiFiClient client;
@@ -451,7 +473,10 @@ bool discoverGateway() {
         if (client.connect(candidate, 80)) {
             client.print("GET /api/v1/health HTTP/1.0\r\nHost: gm\r\n\r\n");
             unsigned long t = millis();
-            while (!client.available() && millis() - t < 300) { delay(10); yield(); }
+            while (!client.available() && millis() - t < 300) {
+                delay(10);
+                yield();
+            }
             String resp = client.readString();
             client.stop();
             if (resp.indexOf("hardware_id") >= 0) {
@@ -461,7 +486,8 @@ bool discoverGateway() {
                 return true;
             }
         }
-        if (host % 20 == 0) Serial.printf("[Biolingo] Scanned %d/254\n", host);
+        if (host % 20 == 0)
+            Serial.printf("[Biolingo] Scanned %d/254\n", host);
     }
     return false;
 }
@@ -469,11 +495,11 @@ bool discoverGateway() {
 // ── Sensor Registration ───────────────────────
 
 bool registerSensor() {
-    Serial.printf("[Biolingo] Registering with code: %s\n", pairingCode.c_str());
+    Serial.println("[Biolingo] Registering sensor with gateway");
 
     JsonDocument doc;
     doc["mac_address"] = macAddress;
-    doc["code"]        = pairingCode;
+    doc["code"] = pairingCode;
 
     String body;
     serializeJson(doc, body);
@@ -493,37 +519,77 @@ bool registerSensor() {
 // 3-sample moving average for noise reduction
 
 float applyFilter(float newValue) {
-    if (!lpFilterInit) { lpFilterState = newValue; lpFilterInit = true; }
+    if (!lpFilterInit) {
+        lpFilterState = newValue;
+        lpFilterInit = true;
+    }
     lpFilterState = LP_ALPHA * newValue + (1.0f - LP_ALPHA) * lpFilterState;
     return lpFilterState;
 }
 
 // Build the biquad notch coefficients once (RBJ band-stop at NOTCH_FREQ)
 void initNotch() {
-    float w0    = 2.0f * PI * NOTCH_FREQ / SAMPLE_RATE;
-    float cw    = cosf(w0);
+    float w0 = 2.0f * PI * NOTCH_FREQ / SAMPLE_RATE;
+    float cw = cosf(w0);
     float alpha = sinf(w0) / (2.0f * NOTCH_Q);
-    float a0    = 1.0f + alpha;
-    n_b0 = 1.0f / a0;          n_b1 = -2.0f * cw / a0;   n_b2 = 1.0f / a0;
-    n_a1 = -2.0f * cw / a0;    n_a2 = (1.0f - alpha) / a0;
-    n_z1 = n_z2 = 0.0f;        notchReady = true;
+    float a0 = 1.0f + alpha;
+    n_b0 = 1.0f / a0;
+    n_b1 = -2.0f * cw / a0;
+    n_b2 = 1.0f / a0;
+    n_a1 = -2.0f * cw / a0;
+    n_a2 = (1.0f - alpha) / a0;
+    n_z1 = n_z2 = 0.0f;
+    notchReady = true;
 }
 
 // 50 Hz notch (transposed Direct-Form II). Leaves DC and the plant band intact.
 float applyNotch(float x) {
-    if (!notchReady) initNotch();
+    if (!notchReady)
+        initNotch();
     float y = n_b0 * x + n_z1;
     n_z1 = n_b1 * x - n_a1 * y + n_z2;
     n_z2 = n_b2 * x - n_a2 * y;
     return y;
 }
 
+bool acquireFreeBatch() {
+    if (freeBatchQueue == NULL || activeBatchIndex != INVALID_BATCH_INDEX) {
+        return activeBatchIndex != INVALID_BATCH_INDEX;
+    }
+
+    uint8_t nextBatch = INVALID_BATCH_INDEX;
+    if (xQueueReceive(freeBatchQueue, &nextBatch, 0) != pdTRUE) {
+        return false;
+    }
+    if (nextBatch >= BATCH_POOL_SIZE) {
+        Serial.println("[Biolingo] Invalid batch-pool index. Rebooting...");
+        delay(1000);
+        ESP.restart();
+        return false;
+    }
+
+    activeBatchIndex = nextBatch;
+    bufferIndex = 0;
+    return true;
+}
+
+void recordDroppedSamples(uint32_t count, const char* reason) {
+    uint32_t previousBatchEquivalent = droppedSampleCount / BATCH_SIZE;
+    droppedSampleCount += count;
+    uint32_t newBatchEquivalent = droppedSampleCount / BATCH_SIZE;
+    droppedBatchCount = newBatchEquivalent;
+
+    if (newBatchEquivalent > previousBatchEquivalent) {
+        Serial.printf("[Biolingo] DATA LOSS: %lu samples (~%lu batches) dropped; %s\n",
+                      static_cast<unsigned long>(droppedSampleCount),
+                      static_cast<unsigned long>(droppedBatchCount), reason);
+    }
+}
+
 // ── High-Frequency Data Streaming ─────────────
 // 380 Hz sampling with AD8232 artifact detection
 
 void streamReadings() {
-    // Handle incoming requests (DELETE, health) non-blocking
-
     // WiFi watchdog (every 5 seconds)
     if (millis() - lastWifiCheck > 5000) {
         lastWifiCheck = millis();
@@ -534,7 +600,8 @@ void streamReadings() {
             WiFi.setSleep(false);
             esp_wifi_set_ps(WIFI_PS_NONE);
             int retries = 15;
-            while (WiFi.status() != WL_CONNECTED && retries-- > 0) delay(1000);
+            while (WiFi.status() != WL_CONNECTED && retries-- > 0)
+                delay(1000);
             if (WiFi.status() != WL_CONNECTED) {
                 Serial.println("[Biolingo] WiFi reconnect failed, rebooting");
                 ESP.restart();
@@ -544,8 +611,21 @@ void streamReadings() {
 
     // Timer-based sampling at 380 Hz
     unsigned long now = micros();
-    if (now - lastSampleTime >= (unsigned long)SAMPLE_INTERVAL_US) {
-        lastSampleTime += SAMPLE_INTERVAL_US;  // Exact timing compensation
+    unsigned long elapsed = now - lastSampleTime;
+    if (elapsed >= static_cast<unsigned long>(SAMPLE_INTERVAL_US)) {
+        if (elapsed >= static_cast<unsigned long>(SAMPLE_INTERVAL_US) * MAX_SAMPLE_LAG_INTERVALS) {
+            // Reconnects, OTA, and display I/O can block this loop. Never create
+            // fake 380 Hz history by rapidly sampling the current ADC value to
+            // catch up. Discard a partial pre-gap batch so a WAV chunk never
+            // presents samples from both sides of the outage as contiguous.
+            uint32_t missedSamples = elapsed / SAMPLE_INTERVAL_US - 1;
+            uint32_t partialBatchSamples = static_cast<uint32_t>(bufferIndex);
+            bufferIndex = 0;
+            recordDroppedSamples(missedSamples + partialBatchSamples, "sampler was blocked");
+            lastSampleTime = now;
+        } else {
+            lastSampleTime += SAMPLE_INTERVAL_US;
+        }
 
         // 1. Read raw values synchronously
         int rawAdc = analogRead(ADC_PIN);
@@ -555,7 +635,7 @@ void streamReadings() {
         // 2. Convert to millivolts and apply filter
         float mv = (rawAdc / 4095.0f) * ADC_VOLTAGE_REF * 1000.0f;
         float filteredMv = applyFilter(mv);
-        filteredMv = applyNotch(filteredMv);   // 50 Hz mains notch
+        filteredMv = applyNotch(filteredMv); // 50 Hz mains notch
 
         // 3. Artifact detection
         uint8_t flags = FLAG_VALID;
@@ -605,35 +685,47 @@ void streamReadings() {
             lastValidValue = filteredMv;
         }
 
-        // 4. Store in batch buffer
-        buffers[currentBuffer].sampleBuffer[bufferIndex] = filteredMv;
-        buffers[currentBuffer].lpBuffer[bufferIndex]     = lp;
-        buffers[currentBuffer].lmBuffer[bufferIndex]     = lm;
-        buffers[currentBuffer].flagBuffer[bufferIndex]   = flags;
+        // 4. Store only when the sampler owns a free batch. Continue sampling and
+        // filtering under backpressure, but make every dropped second observable.
+        if (!acquireFreeBatch()) {
+            recordDroppedSamples(1, "all batch buffers are in flight");
+            return;
+        }
+
+        SensorBatch& activeBatch = batchPool[activeBatchIndex];
+        activeBatch.sampleBuffer[bufferIndex] = filteredMv;
+        activeBatch.lpBuffer[bufferIndex] = lp;
+        activeBatch.lmBuffer[bufferIndex] = lm;
+        activeBatch.flagBuffer[bufferIndex] = flags;
         bufferIndex++;
 
         // 5. Send batch when full (380 samples = 1 second)
         if (bufferIndex >= BATCH_SIZE) {
             // Calculate batch mean for display
             float batchMean = 0.0f;
-            for (int i = 0; i < BATCH_SIZE; i++) batchMean += buffers[currentBuffer].sampleBuffer[i];
+            for (int i = 0; i < BATCH_SIZE; i++)
+                batchMean += activeBatch.sampleBuffer[i];
             batchMean /= BATCH_SIZE;
 
-            SensorBatch* readyBatch = &buffers[currentBuffer];
-            if (uploadQueue != NULL) {
-                if (xQueueSend(uploadQueue, &readyBatch, 0) != pdTRUE) {
-                    Serial.println("[Biolingo] Upload queue full! Dropping batch.");
+            uint8_t readyBatchIndex = activeBatchIndex;
+            activeBatchIndex = INVALID_BATCH_INDEX;
+            bufferIndex = 0;
+
+            if (uploadQueue == NULL || xQueueSend(uploadQueue, &readyBatchIndex, 0) != pdTRUE) {
+                recordDroppedSamples(BATCH_SIZE, "upload queue rejected a completed batch");
+                if (freeBatchQueue != NULL) {
+                    xQueueSend(freeBatchQueue, &readyBatchIndex, 0);
                 }
             }
 
-            currentBuffer = (currentBuffer + 1) % 2;
-            bufferIndex = 0;
+            // Best effort: reserve the next slot now. If all slots are in flight,
+            // subsequent samples are counted as dropped until the uploader returns one.
+            acquireFreeBatch();
 
             // Update display after each batch (once per second)
             bool wifiOk = (WiFi.status() == WL_CONNECTED);
-            Display::showStreaming(macAddress, wifiOk, true,
-                                  lastSendOk, streamErrors, currentLeadOff,
-                                  batchMean);
+            Display::showStreaming(macAddress, wifiOk, true, lastSendOk, streamErrors,
+                                   currentLeadOff, batchMean);
 
             if (streamErrors > 100) {
                 Serial.println("[Biolingo] Too many errors, rebooting");
@@ -645,16 +737,26 @@ void streamReadings() {
     }
 }
 
-void uploadTaskCode(void *pvParameters) {
-    SensorBatch* batchToUpload;
+void uploadTaskCode(void* pvParameters) {
+    uint8_t batchToUpload = INVALID_BATCH_INDEX;
     for (;;) {
         if (xQueueReceive(uploadQueue, &batchToUpload, portMAX_DELAY) == pdTRUE) {
-            sendBatch(batchToUpload);
+            if (batchToUpload >= BATCH_POOL_SIZE) {
+                Serial.println("[Biolingo] Upload queue returned an invalid batch index.");
+                continue;
+            }
+
+            sendBatch(batchPool[batchToUpload]);
+
+            // Ownership returns only after serialization and HTTP have completed.
+            if (xQueueSend(freeBatchQueue, &batchToUpload, portMAX_DELAY) != pdTRUE) {
+                Serial.println("[Biolingo] Failed to return batch buffer to pool.");
+            }
         }
     }
 }
 
-void sendBatch(SensorBatch* batch) {
+void sendBatch(const SensorBatch& batch) {
     // Build JSON payload (standard production format for /api/v1/ingest)
     static JsonDocument doc;
     doc.clear();
@@ -670,9 +772,9 @@ void sendBatch(SensorBatch* batch) {
             delay(2000);
             ESP.restart();
         }
-        r["kind"]  = "bio_signal";
-        r["value"] = round(batch->sampleBuffer[i] * 10.0f) / 10.0f;
-        r["unit"]  = "mV";
+        r["kind"] = "bio_signal";
+        r["value"] = round(batch.sampleBuffer[i] * 10.0f) / 10.0f;
+        r["unit"] = "mV";
     }
 
     String payload;
@@ -691,10 +793,14 @@ void sendBatch(SensorBatch* batch) {
     if (code == 200 || code == 201) {
         streamErrors = 0;
         lastSendOk = true;
-        Serial.printf("[Biolingo] Sent %d samples @ %d Hz [OK]\n", BATCH_SIZE, SAMPLE_RATE);
+        Serial.printf("[Biolingo] Sent %d samples @ %d Hz [OK] (dropped total: %lu)\n", BATCH_SIZE,
+                      SAMPLE_RATE, static_cast<unsigned long>(droppedSampleCount));
     } else {
         streamErrors++;
         lastSendOk = false;
+        // There is no persistent retry queue on the sensor. Once this owned
+        // buffer returns to the pool, a failed batch cannot be recovered.
+        recordDroppedSamples(BATCH_SIZE, "gateway did not acknowledge batch");
         Serial.printf("[Biolingo] Stream error: HTTP %d (count: %d)\n", code, streamErrors);
     }
 }

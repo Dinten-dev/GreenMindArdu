@@ -13,9 +13,9 @@
 // ── Pin Configuration ─────────────────────────
 #define OLED_SDA_PIN 13
 #define OLED_SCL_PIN 12
-#define OLED_WIDTH   128
-#define OLED_HEIGHT  64
-#define OLED_ADDR    0x3C
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+#define OLED_ADDR 0x3C
 
 namespace Display {
 
@@ -39,9 +39,8 @@ void showOtaCheck();
 void showOtaUpdate(const String& newVersion);
 
 /// Main streaming status screen (called once per batch send).
-void showStreaming(const String& mac, bool wifiOk, bool gwOk,
-                   bool sendOk, int errorCount, bool leadOff,
-                   float currentMv);
+void showStreaming(const String& mac, bool wifiOk, bool gwOk, bool sendOk, int errorCount,
+                   bool leadOff, float currentMv);
 
 /// Error / reboot screen.
 void showError(const String& line1, const String& line2);
@@ -49,6 +48,6 @@ void showError(const String& line1, const String& line2);
 /// Registration in progress.
 void showRegistering();
 
-}  // namespace Display
+} // namespace Display
 
 #endif

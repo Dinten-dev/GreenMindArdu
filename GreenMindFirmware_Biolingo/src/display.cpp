@@ -26,15 +26,14 @@ static void clearScreen() {
 }
 
 /// Draw a horizontal separator line at the given y position.
-static void drawSeparator(int y) {
-    oled.drawFastHLine(0, y, OLED_WIDTH, SSD1306_WHITE);
-}
+static void drawSeparator(int y) { oled.drawFastHLine(0, y, OLED_WIDTH, SSD1306_WHITE); }
 
 /// Center text horizontally on a given y line (textSize 1, 6px/char).
 static void centerText(const char* text, int y) {
     int len = strlen(text);
     int x = (OLED_WIDTH - len * 6) / 2;
-    if (x < 0) x = 0;
+    if (x < 0)
+        x = 0;
     oled.setCursor(x, y);
     oled.print(text);
 }
@@ -61,7 +60,8 @@ bool Display::init() {
 }
 
 void Display::showBoot(const String& mac) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     // Header (larger text)
@@ -87,7 +87,8 @@ void Display::showBoot(const String& mac) {
 }
 
 void Display::showBleProvisioning(const String& name, const String& code) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     oled.setTextSize(2);
@@ -108,7 +109,8 @@ void Display::showBleProvisioning(const String& name, const String& code) {
 }
 
 void Display::showConnecting(const String& ssid) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     centerText("Connecting...", 10);
@@ -128,7 +130,8 @@ void Display::showConnecting(const String& ssid) {
 }
 
 void Display::showSearchGW(const String& method) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     centerText("Searching", 10);
@@ -144,7 +147,8 @@ void Display::showSearchGW(const String& method) {
 }
 
 void Display::showOtaCheck() {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     centerText("OTA Check", 10);
@@ -154,7 +158,8 @@ void Display::showOtaCheck() {
 }
 
 void Display::showOtaUpdate(const String& newVersion) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     centerText("OTA Update", 6);
@@ -171,10 +176,10 @@ void Display::showOtaUpdate(const String& newVersion) {
     oled.display();
 }
 
-void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
-                            bool sendOk, int errorCount, bool leadOff,
-                            float currentMv) {
-    if (!displayReady) return;
+void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk, bool sendOk, int errorCount,
+                            bool leadOff, float currentMv) {
+    if (!displayReady)
+        return;
     clearScreen();
 
     // Header
@@ -208,8 +213,9 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
     char mvBuf[12];
     snprintf(mvBuf, sizeof(mvBuf), "%.1fmV", currentMv);
     int mvLen = strlen(mvBuf);
-    int mvX = OLED_WIDTH - mvLen * 6;  // 6px per char at textSize 1
-    if (mvX < 42) mvX = 42;            // Don't overlap TX status
+    int mvX = OLED_WIDTH - mvLen * 6; // 6px per char at textSize 1
+    if (mvX < 42)
+        mvX = 42; // Don't overlap TX status
     oled.setCursor(mvX, 36);
     oled.print(mvBuf);
 
@@ -236,7 +242,8 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk,
 }
 
 void Display::showError(const String& line1, const String& line2) {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     oled.setTextSize(2);
@@ -256,7 +263,8 @@ void Display::showError(const String& line1, const String& line2) {
 }
 
 void Display::showRegistering() {
-    if (!displayReady) return;
+    if (!displayReady)
+        return;
     clearScreen();
 
     centerText("Registering", 14);

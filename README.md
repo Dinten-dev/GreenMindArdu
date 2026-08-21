@@ -1,7 +1,7 @@
 # GreenMind ESP32 Sensor Firmware
 
 🎥 **Video Presentation:** [Watch our showcase at the Science Exhibition](https://youtu.be/OdKqk1Vc4Uo?si=9BqRJsJWqswzQC3o) — A short introduction to what we have discovered so far.
-> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a two-stage digital filter (20 Hz EMA lowpass + 50 Hz biquad notch), sends data to the Raspberry Pi Gateway via HTTP POST. Supports automatic provisioning via captive portal and OTA firmware updates.
+> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a two-stage digital filter (20 Hz EMA lowpass + 50 Hz biquad notch), sends data to the Raspberry Pi Gateway via HTTP POST, provisions Wi-Fi over BLE, and supports OTA firmware updates.
 
 > **⚠️ R&D Status:** Part of the [GreenMind](https://github.com/Dinten-dev/GreenMindDB) research platform by **Galaxyadvisors AG** in collaboration with FHNW.
 
@@ -15,13 +15,15 @@
 4. [Project Structure](#project-structure)
 5. [Prerequisites](#prerequisites)
 6. [Flashing](#flashing)
-7. [Pairing Workflow](#pairing-workflow)
+7. [Provisioning and Pairing](#provisioning-and-pairing)
 8. [Gateway Discovery](#gateway-discovery)
 9. [OTA Updates](#ota-updates)
-10. [Remote Reset](#remote-reset)
-11. [Related Repositories](#related-repositories)
-12. [Author & Credits](#author--credits)
-13. [License](#license)
+10. [Reset Behavior](#reset-behavior)
+11. [Artifact Detection](#artifact-detection-ad8232--biolingo)
+12. [Security and Verification](#security-and-verification)
+13. [Related Repositories](#related-repositories)
+14. [Author & Credits](#author--credits)
+15. [License](#license)
 
 ---
 
@@ -63,9 +65,9 @@ Plant → AD8232 → GPIO (ADC) → 380 Hz timer → EMA LP → Notch 50Hz → m
 
 | Directory | Board | Framework | Features |
 |-----------|-------|-----------|----------|
-| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | OTA updates, OLED display, captive portal, 380 Hz streaming, AD8232 artifact detection |
+| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | OTA updates, OLED display, BLE Wi-Fi provisioning, 380 Hz streaming, AD8232 artifact detection |
 
-> 📦 Archived ESP32-WROOM variants (GreenMindFirmware, AD8232, OTA) and a MicroPython prototype are available in `archive/`.
+> 📦 Archived ESP32-WROOM variants are retained in `archive/`. The root `GreenMind/` directory is a clearly marked legacy MicroPython prototype and is not part of the production build.
 
 ---
 
@@ -99,7 +101,7 @@ Steckdose ─── Netzteil B ─── ESP32              └── USB ──
 - **Sensor-Netzteil:** USB 5V / 500 mA (beliebig)
 - **RPi-Netzteil:** Offizielles Raspberry Pi Netzteil (5V / 3A)
 
-> Die Firmware v1.0.2 enthält einen digitalen 50-Hz-Notchfilter als Absicherung, aber die **physische Trennung bleibt zwingend** für saubere Signale.
+> Die aktive Firmware enthält einen digitalen 50-Hz-Notchfilter als Absicherung, aber die **physische Trennung bleibt zwingend** für saubere Signale.
 
 ---
 
@@ -107,7 +109,7 @@ Steckdose ─── Netzteil B ─── ESP32              └── USB ──
 
 ```
 GreenMindArdu/
-├── flash-sensor.sh                 # 🚀 One-liner flash tool (curl-pipe-bash)
+├── flash-sensor.sh                 # Local PlatformIO build/flash wrapper
 ├── GreenMindFirmware_Biolingo/     # Active firmware (ESP32-S3, PlatformIO)
 │   ├── platformio.ini              # ESP32-S3 build config
 │   ├── partitions.csv              # Custom partition table (OTA)
@@ -130,37 +132,27 @@ GreenMindArdu/
 ## Prerequisites
 
 - **PlatformIO CLI** or **PlatformIO IDE** (VS Code extension)
-- Dependencies are auto-resolved from `platformio.ini`
-- The [flash-sensor.sh](flash-sensor.sh) script installs PlatformIO automatically if missing
+- Platform and library versions are pinned in `platformio.ini` for reproducible builds
+- **PlatformIO Core 6.1.19** (the version used by CI)
 
 ---
 
 ## Flashing
 
-### One-Liner Flash
+### Reviewed local flash
 
-Plug in your ESP32-S3 (Biolingo v22) via USB-C and run:
+Clone and inspect the repository, create an isolated tool environment, then plug in the ESP32-S3 and flash it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindArdu/main/flash-sensor.sh | bash
+git clone https://github.com/Dinten-dev/GreenMindArdu.git
+cd GreenMindArdu
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install platformio==6.1.19
+./flash-sensor.sh
 ```
 
-This single command handles everything:
-
-| Step | Action | Details |
-|------|--------|---------|
-| **1** | Source Code | Clones the firmware repository (or uses local copy) |
-| **2** | Toolchain | Installs PlatformIO with ESP32-S3 support |
-| **3** | USB Detection | Auto-detects the ESP32-S3 serial port |
-| **4** | Firmware | Selects GreenMindFirmware_Biolingo (ESP32-S3 Biolingo v22) |
-| **5** | Compile & Flash | Builds and uploads the firmware in one step |
-| **6** | Verification | Optionally opens serial monitor to verify boot |
-
-> **Note:** The script is safe to re-run — it skips tools that are already installed and only downloads what's needed.
-
-> ⚠️ Make sure you're using a **data-capable USB cable** (not charge-only). If no device is detected, the script provides driver installation instructions.
-
-> 📦 Archived ESP32-WROOM firmware variants (GreenMindFirmware, AD8232, OTA) are available in the `archive/` directory.
+Use `./flash-sensor.sh --port /dev/your-device --monitor` when automatic serial-port detection is ambiguous. The wrapper never downloads tools or executes remote installers. Archived variants are reference material and are not exposed as production choices.
 
 ### Manual Flash (Alternative)
 
@@ -168,7 +160,7 @@ This single command handles everything:
 
 ```bash
 cd GreenMindFirmware_Biolingo
-pio run --target upload
+pio run --environment biolingo_v22 --target upload
 pio device monitor
 ```
 
@@ -176,18 +168,16 @@ pio device monitor
 
 ---
 
-## Pairing Workflow
+## Provisioning and Pairing
 
-1. Flash the firmware and boot the ESP32
-2. The sensor detects no WiFi credentials in NVS
-3. **Setup Mode**: Creates an Access Point named `GreenMind-Sensor-XXXX` (last 4 hex chars of MAC)
-4. Connect your phone to the AP — a captive portal opens automatically
-5. Enter:
-   - **WiFi SSID** — your local network
-   - **WiFi Password**
-   - **Pairing Code** — 6-character code from the GreenMind Dashboard
-6. The ESP32 saves credentials to NVS, reboots, and connects to WiFi
-7. It discovers the Gateway via UDP broadcast, registers with the pairing code, and starts streaming at 380 Hz
+The firmware contains no build-time Wi-Fi credentials. A device without valid NVS credentials uses the runtime provisioning flow:
+
+1. The sensor advertises over BLE as `GM-XXXX`, where `XXXX` is the final four hexadecimal characters of its MAC address.
+2. The OLED displays a six-character proof-of-possession code generated from the ESP32 hardware random-number source; serial logs do not expose it.
+3. An Espressif-compatible Security 1 provisioning client supplies the Wi-Fi SSID and password using that BLE name and proof-of-possession.
+4. The firmware stores the provisioned network in NVS, restarts, discovers the gateway, and begins streaming.
+
+Cloud sensor association is a separate existing flow. If a dashboard pairing code is present in NVS, the firmware submits it once to `POST /api/v1/sensors/register` through the gateway and then clears it. The current BLE Wi-Fi provisioning callback does not itself populate that dashboard pairing code; gateway/dashboard automation must account for this distinction.
 
 ---
 
@@ -207,26 +197,26 @@ The discovered IP is cached in NVS for subsequent boots.
 
 The firmware supports over-the-air updates via the Raspberry Pi Gateway:
 
-1. The sensor checks the gateway's `/api/v1/firmware/check` endpoint periodically (every 1 hour)
-2. If a newer firmware is available, the binary is downloaded and verified via **SHA256**
-3. The update is applied via the ESP32 OTA partition scheme
-4. On failure, the device rolls back to the previous firmware automatically
+1. The sensor checks the gateway's `/api/v1/ota/check` endpoint at boot and every hour.
+2. It validates that the supplied SHA-256 is a 64-character hexadecimal digest.
+3. It rejects missing, short, oversized, timed-out, or hash-mismatched downloads and aborts the inactive OTA partition.
+4. Only a length- and SHA-256-verified image is finalized as bootable; the next boot is reported to the gateway.
 
 The custom `partitions.csv` allocates space for two OTA slots:
 ```
 # Name,   Type, SubType, Offset,  Size
-nvs,      data, nvs,     0x9000,  0x5000
-otadata,  data, ota,     0xe000,  0x2000
-app0,     app,  ota_0,   0x10000, 0x1E0000
-app1,     app,  ota_1,   0x1F0000,0x1E0000
-spiffs,   data, spiffs,  0x3D0000,0x30000
+nvs,      data, nvs,     auto,    0x4000
+otadata,  data, ota,     auto,    0x2000
+app0,     app,  ota_0,   auto,    1500K
+app1,     app,  ota_1,   auto,    1500K
+spiffs,   data, spiffs,  auto,    256K
 ```
 
 ---
 
-## Remote Reset
+## Reset Behavior
 
-If you delete the sensor via the Dashboard, the Gateway transmits an HTTP `DELETE` command. The ESP32 immediately wipes its NVS config and reboots into Setup Mode with a fresh captive portal.
+The active firmware does not expose an inbound HTTP reset endpoint. Deleting a cloud sensor therefore does not erase device NVS. Reset or reprovision a device through an authorized local flashing/erase workflow until a coordinated authenticated control protocol is implemented across sensor, gateway, and backend.
 
 ---
 
@@ -243,7 +233,29 @@ The AD8232-based variants perform real-time signal quality assessment:
 | `JUMP` | 8 | |Δ| > 500 mV between consecutive samples |
 | `RECOVERY` | 16 | 100 ms cooldown window after any artifact |
 
-Flags are transmitted per-sample as a bitmask in the `flags` field.
+Flags are retained in the firmware's internal batch while sampling. The current production ingest payload intentionally remains `{kind, value, unit}` for compatibility and does **not** transmit these flags; adding them requires a coordinated gateway/backend schema change.
+
+---
+
+## Security and Verification
+
+- Never add Wi-Fi credentials or other secrets to `platformio.ini`; provisioning data belongs in device NVS.
+- OTA images are checked against the SHA-256 metadata supplied by the gateway before the partition is finalized.
+- SHA-256 protects the image only if the metadata source is trusted. Sensor-to-gateway OTA still uses local HTTP and has no independent firmware signature, so a compromised or impersonated gateway remains an OTA trust risk.
+- Batch buffers come from a fixed ownership pool. When uploads cannot keep up, the firmware logs cumulative dropped samples instead of reusing in-flight memory.
+
+Run the focused source-invariant checks and the firmware build with:
+
+```bash
+python3 -m unittest discover -s tests -v
+cd GreenMindFirmware_Biolingo
+pio run
+```
+
+The firmware CI workflow runs those checks with Python 3.12.8, PlatformIO 6.1.19, and
+clang-format 18.1.8. Formatting is defined by the root `.clang-format` and applies only to
+`GreenMindFirmware_Biolingo/src` and `GreenMindFirmware_Biolingo/include` when present;
+archived variants are intentionally excluded.
 
 ---
 
