@@ -35,8 +35,8 @@ class FirmwareSecurityInvariantTests(unittest.TestCase):
         self.assertNotIn("sizeof(SensorBatch*)", main)
         self.assertNotIn("static SensorBatch   buffers[2]", main)
 
-        upload_task = main[main.index("void uploadTaskCode(") :]
-        send_position = upload_task.index("sendBatch(batchPool[batchToUpload])")
+        upload_task = main[main.index("void uploadTaskCode(void* pvParameters) {") :]
+        send_position = upload_task.index("sendBatch(liveBatch)")
         release_position = upload_task.index(
             "xQueueSend(freeBatchQueue, &batchToUpload, portMAX_DELAY)"
         )
@@ -62,34 +62,97 @@ class FirmwareSecurityInvariantTests(unittest.TestCase):
         finalize_position = download.index("Update.end()")
         self.assertLess(verify_position, finalize_position)
 
-    def test_sampler_records_blocking_gaps_without_fake_catch_up(self) -> None:
+    def test_sampler_uses_hardware_timer_without_fake_catch_up(self) -> None:
         main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
-        sampler_start = main.index("void streamReadings() {")
-        sampler_end = main.index("void uploadTaskCode(void*", sampler_start)
-        sampler = main[sampler_start:sampler_end]
 
-        gap_position = sampler.index(
-            'recordDroppedSamples(missedSamples + partialBatchSamples, "sampler was blocked")'
-        )
-        partial_reset_position = sampler.index("bufferIndex = 0;")
-        reset_position = sampler.index("lastSampleTime = now;")
-        adc_position = sampler.index("analogRead(ADC_PIN)")
-        self.assertLess(gap_position, adc_position)
-        self.assertLess(partial_reset_position, adc_position)
-        self.assertLess(reset_position, adc_position)
-        self.assertNotIn("lastSampleTime += SAMPLE_INTERVAL_US; // Exact timing compensation", sampler)
+        self.assertIn("timerBegin(0, 2, true)", main)
+        self.assertIn("timerAlarmWrite(samplingTimer, SAMPLE_TIMER_TICKS, true)", main)
+        self.assertIn("vTaskNotifyGiveFromISR", main)
+        self.assertIn("ulTaskNotifyTake(pdTRUE, portMAX_DELAY)", main)
+        self.assertIn('"hardware sampling task was delayed"', main)
+        self.assertNotIn("lastSampleTime", main)
+        self.assertNotIn("micros()", main)
 
     def test_high_risk_legacy_scripts_are_removed(self) -> None:
         self.assertFalse((FIRMWARE / "flash_and_register.sh").exists())
         self.assertFalse((FIRMWARE / "patch_main.py").exists())
 
-    def test_failed_upload_batch_is_counted_as_dropped(self) -> None:
+    def test_failed_upload_batch_is_persisted_before_release(self) -> None:
+        main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
+        upload_task = main[main.index("void uploadTaskCode(void* pvParameters) {") :]
+
+        self.assertIn("sensorSpool.append(liveBatch)", upload_task)
+        self.assertIn("sensorSpool.peek(pending)", upload_task)
+        self.assertIn("sensorSpool.acknowledge()", upload_task)
+        self.assertLess(
+            upload_task.index("sensorSpool.append(liveBatch)"),
+            upload_task.index("xQueueSend(freeBatchQueue"),
+        )
+
+    def test_batches_publish_bounded_quality_metadata(self) -> None:
+        main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
+        sender = main[main.index("bool sendBatch(const SensorBatch& batch)") :]
+
+        for required in (
+            'doc["protocol_version"] = batch.protocolVersion;',
+            'doc["firmware_version"] = batch.firmwareVersion;',
+            'doc["calibration_version"] = batch.calibrationVersion;',
+            'doc["boot_id"] = batch.bootId;',
+            'doc["quality_counts"]',
+            'quality["valid"]',
+            'quality["lead_off"]',
+            'quality["rail_high"]',
+            'quality["rail_low"]',
+            'quality["jump"]',
+            'quality["recovery"]',
+            'doc["values_deci_mv"]',
+        ):
+            self.assertIn(required, sender)
+
+    def test_batch_reports_sequence_uptime_and_dropped_samples(self) -> None:
         main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
 
-        self.assertIn(
-            'recordDroppedSamples(BATCH_SIZE, "gateway did not acknowledge batch")',
-            main,
-        )
+        for required in (
+            "activeBatch.sequence = nextBatchSequence++;",
+            "activeBatch.uptimeMs = millis();",
+            "activeBatch.droppedSamplesTotal = droppedSampleCount;",
+            'doc["sequence"] = batch.sequence;',
+            'doc["uptime_ms"] = batch.uptimeMs;',
+            'doc["dropped_samples_total"] = batch.droppedSamplesTotal;',
+        ):
+            self.assertIn(required, main)
+
+    def test_n16r8_partition_retains_ota_and_large_spool(self) -> None:
+        partitions = (FIRMWARE / "partitions.csv").read_text(encoding="utf-8")
+        platformio = (FIRMWARE / "platformio.ini").read_text(encoding="utf-8")
+        board = (FIRMWARE / "boards" / "biolingo_v22.json").read_text(encoding="utf-8")
+
+        self.assertIn("app0,     app,  ota_0,   0x020000,  0x300000", partitions)
+        self.assertIn("app1,     app,  ota_1,   0x320000,  0x300000", partitions)
+        self.assertIn("spiffs,   data, spiffs,  0x620000,  0x9D0000", partitions)
+        self.assertIn("board = biolingo_v22", platformio)
+        self.assertIn('"flash_size": "16MB"', board)
+        self.assertIn('"memory_type": "qio_opi"', board)
+
+    def test_spool_records_are_crc_protected_and_never_auto_reformatted(self) -> None:
+        spool = (FIRMWARE / "src" / "sensor_spool.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("uint32_t crc32", spool)
+        self.assertIn("expected != record.crc32", spool)
+        self.assertIn("LittleFS.begin(false)", spool)
+        self.assertNotIn("LittleFS.begin(true)", spool)
+        self.assertIn("retained without formatting", spool)
+
+    def test_registration_retries_are_bounded_and_pairing_is_retained(self) -> None:
+        main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
+        registration = main[main.index("void registrationTaskCode(void*") :]
+
+        self.assertIn("MAX_REGISTRATION_ATTEMPTS = 5", main)
+        self.assertIn("REGISTRATION_RETRY_INTERVAL_MS = 60000", main)
+        self.assertIn("attempt <= MAX_REGISTRATION_ATTEMPTS", registration)
+        self.assertIn("vTaskDelay(pdMS_TO_TICKS(REGISTRATION_RETRY_INTERVAL_MS))", registration)
+        self.assertIn("bool permanentFailure", registration)
+        self.assertNotIn('pairingCode = "";\n        saveConfig();\n    }', main)
 
 
 if __name__ == "__main__":

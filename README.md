@@ -139,6 +139,10 @@ GreenMindArdu/
 
 ## Flashing
 
+The active target is **ESP32-S3-WROOM-1-N16R8**. The first v1.1.0 installation
+must use USB because it replaces the flash partition table. Later application
+updates can use OTA normally.
+
 ### Reviewed local flash
 
 Clone and inspect the repository, create an isolated tool environment, then plug in the ESP32-S3 and flash it:
@@ -202,15 +206,24 @@ The firmware supports over-the-air updates via the Raspberry Pi Gateway:
 3. It rejects missing, short, oversized, timed-out, or hash-mismatched downloads and aborts the inactive OTA partition.
 4. Only a length- and SHA-256-verified image is finalized as bootable; the next boot is reported to the gateway.
 
-The custom `partitions.csv` allocates space for two OTA slots:
+The custom `partitions.csv` allocates dual OTA slots and a durable LittleFS spool:
 ```
-# Name,   Type, SubType, Offset,  Size
-nvs,      data, nvs,     auto,    0x4000
-otadata,  data, ota,     auto,    0x2000
-app0,     app,  ota_0,   auto,    1500K
-app1,     app,  ota_1,   auto,    1500K
-spiffs,   data, spiffs,  auto,    256K
+# Name,   Type, SubType, Offset,    Size
+nvs,      data, nvs,     0x009000,  0x006000
+otadata,  data, ota,     0x00F000,  0x002000
+app0,     app,  ota_0,   0x020000,  0x300000
+app1,     app,  ota_1,   0x320000,  0x300000
+spiffs,   data, spiffs,  0x620000,  0x9D0000
+coredump, data, coredump,0xFF0000,  0x010000
 ```
+
+Failed one-second batches use CRC-protected binary spool segments. Uploads are
+replayed oldest-first and erased only after the gateway confirms the exact
+`boot_id` and `sequence`. At 380 Hz, the spool holds roughly three hours.
+
+Sampling uses a dedicated hardware timer and high-priority task. Wi-Fi,
+discovery, display, OTA, and HTTP work cannot intentionally block the sampler;
+any missed timer notifications remain explicit data-quality gaps.
 
 ---
 
