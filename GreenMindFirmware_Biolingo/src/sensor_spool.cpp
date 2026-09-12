@@ -143,8 +143,7 @@ bool SensorSpool::findOldest(String& path) const {
         if (!name.startsWith("/"))
             name = String(SPOOL_DIR) + "/" + name;
         if (!entry.isDirectory() && isSegmentName(name) &&
-            entry.size() >= sizeof(PersistedRecord) &&
-            (candidate.isEmpty() || name < candidate))
+            entry.size() >= sizeof(PersistedRecord) && (candidate.isEmpty() || name < candidate))
             candidate = name;
         entry.close();
     }
@@ -243,18 +242,10 @@ bool SensorSpool::scan() {
     return true;
 }
 
-bool SensorSpool::hasPending() const {
-    return pendingRecords_ > 0;
-}
+bool SensorSpool::hasPending() const { return pendingRecords_ > 0; }
 
-size_t SensorSpool::pendingRecords() const {
-    return pendingRecords_;
-}
+size_t SensorSpool::pendingRecords() const { return pendingRecords_; }
 
-size_t SensorSpool::usedBytes() const {
-    return mounted_ ? LittleFS.usedBytes() : 0;
-}
+size_t SensorSpool::usedBytes() const { return mounted_ ? LittleFS.usedBytes() : 0; }
 
-size_t SensorSpool::totalBytes() const {
-    return mounted_ ? LittleFS.totalBytes() : 0;
-}
+size_t SensorSpool::totalBytes() const { return mounted_ ? LittleFS.totalBytes() : 0; }

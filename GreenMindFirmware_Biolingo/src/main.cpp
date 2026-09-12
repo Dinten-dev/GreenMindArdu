@@ -386,8 +386,8 @@ void startRuntimeMode() {
     }
 
     // Initial display
-    Display::showStreaming(macAddress, WiFi.status() == WL_CONNECTED, gatewayReady, gatewayReady,
-                           0, false, 0.0f);
+    Display::showStreaming(macAddress, WiFi.status() == WL_CONNECTED, gatewayReady, gatewayReady, 0,
+                           false, 0.0f);
 
     // Create a fixed batch pool and transfer ownership with queue indices.
     freeBatchQueue = xQueueCreate(BATCH_POOL_SIZE, sizeof(uint8_t));
@@ -430,23 +430,22 @@ void startRuntimeMode() {
 
     if (pairingCode.length() > 0 && gatewayReady) {
         BaseType_t registrationTaskResult = xTaskCreatePinnedToCore(
-            registrationTaskCode, "RegistrationTask", 6144, NULL, 1,
-            &registrationTaskHandle, 0);
+            registrationTaskCode, "RegistrationTask", 6144, NULL, 1, &registrationTaskHandle, 0);
         if (registrationTaskResult != pdPASS) {
             Serial.println("[Biolingo] Registration task unavailable; pairing retained");
         }
     }
 
-    BaseType_t samplingResult = xTaskCreatePinnedToCore(
-        samplingTaskCode, "SamplingTask", 6144, NULL, 3, &samplingTaskHandle, 1);
+    BaseType_t samplingResult = xTaskCreatePinnedToCore(samplingTaskCode, "SamplingTask", 6144,
+                                                        NULL, 3, &samplingTaskHandle, 1);
     if (samplingResult != pdPASS) {
         Serial.println("[Biolingo] Failed to start sampling task. Rebooting...");
         delay(2000);
         ESP.restart();
     }
     startSamplingTimer();
-    Serial.printf("[Biolingo] Hardware-timed streaming started (v%s, %d Hz)\n",
-                  FIRMWARE_VERSION, SAMPLE_RATE);
+    Serial.printf("[Biolingo] Hardware-timed streaming started (v%s, %d Hz)\n", FIRMWARE_VERSION,
+                  SAMPLE_RATE);
 }
 
 // ── Gateway Discovery ─────────────────────────
@@ -552,8 +551,7 @@ bool discoverGateway() {
             client.stop();
             if (resp.indexOf("hardware_id") >= 0) {
                 updateGatewayAddress(candidate.toString());
-                Serial.printf("[Biolingo] Found via scan: %s\n",
-                              currentGatewayAddress().c_str());
+                Serial.printf("[Biolingo] Found via scan: %s\n", currentGatewayAddress().c_str());
                 saveConfig();
                 return true;
             }
@@ -967,8 +965,7 @@ void connectivityTaskCode(void* pvParameters) {
 
         if (WiFi.status() == WL_CONNECTED) {
             String gatewayAddress = currentGatewayAddress();
-            bool gatewayHealthy =
-                gatewayAddress.length() > 0 && checkGatewayHealth(gatewayAddress);
+            bool gatewayHealthy = gatewayAddress.length() > 0 && checkGatewayHealth(gatewayAddress);
             if (!gatewayHealthy && discoverGateway()) {
                 Serial.printf("[Biolingo] Gateway rediscovered at %s\n",
                               currentGatewayAddress().c_str());

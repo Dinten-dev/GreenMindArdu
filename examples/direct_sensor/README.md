@@ -75,3 +75,11 @@ An optional output filename writes all 33,001 in-range deci-millivolt encodings
 for the backend's comparison against the unchanged Gateway WAV writer.
 
 No production push or flashing is authorized by building or passing these tests.
+# Staging CI follow-up, 12 September 2026
+
+The existing firmware CI also failed on the published main baseline because
+`GreenMindFirmware_Biolingo/src/main.cpp` and `src/sensor_spool.cpp` did not match
+the repository's pinned clang-format 18.1.8 rules. Only formatting in those two
+existing files was corrected for develop. Their C++ token sequences were checked
+to be identical, and the existing security tests and firmware build were rerun.
+No sensor was flashed and no existing firmware logic was changed.
