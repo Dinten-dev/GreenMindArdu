@@ -63,22 +63,28 @@ separately for this test build.
 Acquisition owns the sample buffer. Separate queues copy blocks by value, so
 network retries cannot read an overwritten rotating acquisition buffer. Each
 path has its own consumer; Direct outage does not block Gateway transmission.
-UTC discovery does not block acquisition or Gateway uploads. Direct retains
-pending RAM blocks until UTC becomes available.
+Direct-only acquisition starts after Wi-Fi and UTC are ready, so startup waits
+do not consume its finite measurement buffer. Gateway/DUAL acquisition and
+Gateway uploads remain independent of UTC discovery.
 
 The queue boundary is `direct_transport/DirectCore.h`. It also represents signed
 24-bit interleaved data without truncation, suitable for a future ADS131M04
 acquisition task. The example does **not** implement an ADS131M04 hardware driver.
 DUAL is restricted to the common mono/380-Hz/PCM16 profile, also enforced server-side.
 
-Queues hold four waiting blocks plus one pending upload per path. At normal
-one-second blocks this is about five seconds. Full queues drop new blocks and
+The Direct queue holds eight waiting blocks plus one pending upload (about nine
+seconds); the Gateway queue remains four plus one (about five seconds).
+The Direct worker reuses its certificate-verified HTTPS connection after reading
+and validating each acknowledgement. It closes failed/invalid responses before
+retrying the same pending block; credentials and metadata headers are refreshed
+for each request. Full queues drop new blocks and
 increment path-specific counters; first-frame indices and sequence gaps expose
 the loss. Acquisition continues. Retries retain an unacknowledged pending block,
 with bounded backoff. Neither acknowledged nor unacknowledged RAM survives power
 loss. A durable SD-backed queue is a future implementation, not a delivered claim.
 
-Monitor `direct_dropped`, `gateway_dropped` and `timing_dropped` over USB. Any
+Monitor `direct_dropped`, `gateway_dropped` and `timing_dropped` over USB, plus
+upload `elapsed_ms`, connection `reused`, and available `heap`. Any
 nonzero growth during the baseline run requires investigation before rollout.
 Real ADC timing, offline recovery, heap headroom during TLS, and sensor operation
 must still be checked with the first Staging devices.

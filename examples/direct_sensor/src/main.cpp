@@ -26,7 +26,7 @@ static char sessionId[37];
 static uint64_t sessionStartUs = 0;
 static std::atomic<bool> hasClock{false};
 static uint64_t sequence = 0;
-static greenmind::SpscQueue<SampleBlock, 4> directQueue;
+static greenmind::SpscQueue<SampleBlock, 8> directQueue;
 static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
@@ -73,6 +73,10 @@ static void submit(SampleBlock& block) {
 }
 
 static bool sendDirect(const SampleBlock& block) {
+    // Owned exclusively by directWorker. Retain the TLS socket across uploads;
+    // constructing these per block made a handshake slower than acquisition.
+    static WiFiClientSecure transport;
+    static HTTPClient http;
     if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
     const String digest = sha256(block.payload, block.byteCount());
     JsonDocument metadata;
@@ -89,21 +93,22 @@ static bool sendDirect(const SampleBlock& block) {
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
     for (uint8_t i = 0; i < block.channels; ++i) labels.add(String("CH") + String(i + 1));
     metadata["calibration_version"] = block.sampleBits == 16 ? "unsigned-mv-linear-int16-v1" : "raw-adc-counts-v1";
-    metadata["firmware_version"] = "direct-hotspot-v2.3";
+    metadata["firmware_version"] = "direct-hotspot-v2.4";
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
-    WiFiClientSecure transport;
     transport.setCACert(certificate.c_str());
     transport.setHandshakeTimeout(10);
-    HTTPClient http;
     if (!http.begin(transport, endpoint)) return false;
+    http.setReuse(true);
     http.setConnectTimeout(5000);
     http.setTimeout(10000);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.addHeader("Authorization", String("Bearer ") + token);
     http.addHeader("Content-Type", "application/octet-stream");
     http.addHeader("X-GreenMind-Metadata", header);
+    const bool reused = transport.connected();
+    const uint32_t started = millis();
     int status = http.POST(const_cast<uint8_t*>(block.payload), block.byteCount());
     bool acknowledged = false;
     if ((status == 200 || status == 201) && http.getSize() >= 0 && http.getSize() <= 1024) {
@@ -122,7 +127,11 @@ static bool sendDirect(const SampleBlock& block) {
         directAcknowledged.store(true, std::memory_order_release);
     }
     // Never print the URL, authorization header, response body or provisioning.
-    Serial.printf("direct_upload status=%d ack=%d sequence=%llu\n", status, acknowledged, block.sequence);
+    Serial.printf("direct_upload status=%d ack=%d sequence=%llu elapsed_ms=%lu reused=%d heap=%u\n",
+        status, acknowledged, block.sequence, millis() - started, reused, ESP.getFreeHeap());
+    // Error bodies can be unread or malformed: discard that connection, while
+    // retaining the same pending block for the existing idempotent retry path.
+    if (!acknowledged) transport.stop();
     http.end();
     return acknowledged;
 }
@@ -189,6 +198,13 @@ static void gatewayWorker(void*) {
 }
 
 static void acquisition(void*) {
+    // A Direct-only session starts once its timestamps and network are ready.
+    // Boot-time Wi-Fi/NTP waits must not fill the finite measurement queue.
+    // Gateway and DUAL retain their independent, immediate acquisition path.
+    if (mode == Mode::Direct) {
+        while (WiFi.status() != WL_CONNECTED || time(nullptr) < 1700000000)
+            vTaskDelay(pdMS_TO_TICKS(50));
+    }
     uint64_t origin = esp_timer_get_time();
     uint64_t frame = 0;
     analogReadResolution(12);
@@ -254,6 +270,7 @@ static void provision(const String& line) {
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("firmware=direct-hotspot-v2.4");
     StatusDisplay::init();
     makeSessionId();
     preferences.begin("gmdirect", true);
