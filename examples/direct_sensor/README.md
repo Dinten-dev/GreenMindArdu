@@ -1,7 +1,7 @@
-# Explicit Direct / DUAL sensor test build
+# Explicit Direct / DUAL sensor build
 
 This folder is a separate PlatformIO project for new, explicitly provisioned
-Biolingo v22 ESP32-S3 test sensors. `GreenMindFirmware_Biolingo` and its existing
+Biolingo v22 ESP32-S3 sensors. `GreenMindFirmware_Biolingo` and its existing
 configuration, partition table and firmware behaviour remain untouched.
 
 Build with `platformio run --project-dir examples/direct_sensor`. This creates
@@ -25,10 +25,30 @@ after a verified upload acknowledgement. Neither the display nor serial logs
 show Wi-Fi passwords, pairing codes, or device tokens. No PC/USB monitor is
 required to start the display or hotspot.
 
+## Explicit Production target
+
+`platformio run --project-dir examples/direct_sensor -e direct_biolingo_production`
+compiles a separate Production image for `https://green-mind.ch`. The default
+`direct_biolingo_test` target remains `https://test.green-mind.ch`. CI compiles both.
+The portal and OLED show the selected server. Production uses its own NVS
+namespace; changing builds cannot reuse a Staging token, device ID or Wi-Fi setup.
+Pair again with a **Direct** code from the selected dashboard after the server's
+separate Direct activation. Returning to Staging retains its previous pairing.
+Neither compilation nor a develop push flashes or upgrades devices automatically.
+Serial provisioning also rejects an endpoint belonging to the other environment.
+
+For DUAL, install a reviewed GreenMindRPIv1 **develop** commit supporting protocol
+v3 on the participating Pi first. Its `/api/v1/health` must advertise
+`ingest_protocol_versions: [1, 2, 3]` and `sequence_acknowledgement: true`.
+The hotspot pairs DIRECT mode; DUAL remains explicit operator provisioning with
+the matching registered Legacy sensor/zone, a DUAL server identity and local
+Gateway URL. There is no automatic sensor migration or cross-path deduplication
+in shared analytics; the archives remain separate.
+
 ## Operator USB configuration
 
 Configuration is also accepted over local USB serial as one JSON line. Secrets go
-into a separate NVS namespace `gmdirect`; they are never printed or compiled
+into a separate NVS namespace (`gmdirect` for Staging, `gmdirectprod` for Production); they are never printed or compiled
 into source. NVS encryption and hardware secure-element provisioning are outside
 this test build. The operator must protect physical provisioning access.
 
@@ -36,7 +56,7 @@ this test build. The operator must protect physical provisioning access.
 |---|---|
 | `transport` | `GATEWAY`, `DIRECT` or `DUAL`; missing means `GATEWAY` |
 | `ssid`, `password` | Test Wi-Fi credentials |
-| `endpoint` | Full reviewed Staging HTTPS `/api/v1/direct-ingest/chunks` URL |
+| `endpoint` | Exact HTTPS `/api/v1/direct-ingest/chunks` URL for the compiled target |
 | `device_id`, `token` | Device identity/key issued by the Direct server |
 | `ca` | PEM CA certificate chain trusted for the HTTPS endpoint |
 | `gateway` | Local test Gateway base URL, required for GATEWAY and DUAL |
@@ -49,7 +69,7 @@ restarts the test device and creates a new session.
 
 The Gateway target is local HTTP because that is the existing Gateway protocol.
 The new cloud path always verifies HTTPS certificates and refuses redirects.
-Do not put Gateway or production cloud credentials into this Direct test setup.
+Never put Staging tokens into a Production build or vice versa.
 
 ## Acquisition and buffering
 

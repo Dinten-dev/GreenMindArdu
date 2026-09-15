@@ -1,6 +1,6 @@
 #pragma once
 // ISRG Root X1, https://letsencrypt.org/certs/isrgrootx1.pem
-static const char STAGING_CA[] PROGMEM = R"PEM(-----BEGIN CERTIFICATE-----
+static const char CLOUD_CA[] PROGMEM = R"PEM(-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
 cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
@@ -32,4 +32,3 @@ mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
 emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )PEM";
-static const char STAGING_BASE[] = "https://test.green-mind.ch/api/v1/direct-ingest";

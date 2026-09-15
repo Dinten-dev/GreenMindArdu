@@ -1,7 +1,8 @@
 #pragma once
 #include <DNSServer.h>
 #include <WebServer.h>
-#include "StagingTrust.h"
+#include "CloudTrust.h"
+#include "CloudConfig.h"
 #include "PairingCode.h"
 
 static DNSServer portalDns;
@@ -12,7 +13,9 @@ static String portalNonce, portalMessage, portalName;
 static String portalScreenMessage = "WLAN + Dashboard-Code";
 
 static void portalPage() {
-    String page = R"HTML(<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GreenMind einrichten</title><style>body{margin:0;background:#f3f6f0;color:#173b2c;font:17px system-ui}main{max-width:400px;margin:6vh auto;padding:28px;background:white;border-radius:22px}h1{font-size:29px}label{display:block;margin:20px 0 7px}input,button{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #bbcec0;border-radius:10px}button{margin-top:24px;background:#236b46;color:white;border:0}small{color:#546b5d}p{line-height:1.5}</style><main><small>GREENMIND · TESTUMGEBUNG</small><h1>Sensor verbinden</h1><p>Gib dein 2,4-GHz-WLAN und den Sensor-Code aus test.green-mind.ch ein.</p>)HTML";
+    String page = R"HTML(<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GreenMind einrichten</title><style>body{margin:0;background:#f3f6f0;color:#173b2c;font:17px system-ui}main{max-width:400px;margin:6vh auto;padding:28px;background:white;border-radius:22px}h1{font-size:29px}label{display:block;margin:20px 0 7px}input,button{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #bbcec0;border-radius:10px}button{margin-top:24px;background:#236b46;color:white;border:0}small{color:#546b5d}p{line-height:1.5}</style><main><small>GREENMIND · %CLOUD_LABEL%</small><h1>Sensor verbinden</h1><p>Gib dein 2,4-GHz-WLAN und den Sensor-Code aus %CLOUD_HOST% ein.</p>)HTML";
+    page.replace("%CLOUD_LABEL%", greenmind::cloud::label);
+    page.replace("%CLOUD_HOST%", greenmind::cloud::host);
     // Messages are fixed firmware text, never echoed form input or credentials.
     page += "<p role='status'>" + portalMessage + "</p>";
     if (pairPending) page += "<meta http-equiv='refresh' content='5'><p>Die Verbindung wird geprüft. Bitte dieses Fenster geöffnet lassen.</p>";
@@ -26,7 +29,7 @@ static void portalPage() {
 }
 
 static void savePendingPairing() {
-    preferences.begin("gmdirect", false);
+    preferences.begin(greenmind::cloud::preferencesNamespace, false);
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     preferences.putString("device_id", deviceId);
@@ -101,10 +104,10 @@ static void handlePortal() {
     if (WiFi.status() != WL_CONNECTED || time(nullptr) < 1700000000 ||
         int32_t(millis() - nextPairAttempt) < 0) return;
     nextPairAttempt = millis() + 10000;
-    WiFiClientSecure tls; tls.setCACert(STAGING_CA); tls.setHandshakeTimeout(5);
+    WiFiClientSecure tls; tls.setCACert(CLOUD_CA); tls.setHandshakeTimeout(5);
     HTTPClient http; http.setConnectTimeout(3000); http.setTimeout(5000);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-    if (!http.begin(tls, String(STAGING_BASE) + "/register")) return;
+    if (!http.begin(tls, String(greenmind::cloud::base) + "/register")) return;
     http.addHeader("Content-Type", "application/json");
     JsonDocument data;
     data["code"] = pairingCode; data["device_id"] = deviceId;
@@ -120,15 +123,15 @@ static void handlePortal() {
     http.end();
     Serial.printf("hotspot_pairing status=%d paired=%d\n", status, paired);
     if (paired) {
-        preferences.begin("gmdirect", false);
+        preferences.begin(greenmind::cloud::preferencesNamespace, false);
         preferences.putString("transport", "DIRECT");
-        preferences.putString("endpoint", String(STAGING_BASE) + "/chunks");
-        preferences.putString("ca", STAGING_CA);
+        preferences.putString("endpoint", String(greenmind::cloud::base) + "/chunks");
+        preferences.putString("ca", CLOUD_CA);
         preferences.putBool("paired", true);
         preferences.remove("pair_code"); preferences.end();
-        portalMessage = "Sensor verbunden. Er startet jetzt und sendet an die Testumgebung.";
+        portalMessage = String("Sensor verbunden. Er startet jetzt und sendet an ") + greenmind::cloud::host + ".";
         pairPending = false; portalCompleted = true;
-        StatusDisplay::show("BEREIT", "Sensor verbunden", "Neustart...", "test.green-mind.ch", "");
+        StatusDisplay::show("BEREIT", "Sensor verbunden", "Neustart...", greenmind::cloud::host, "");
         // Leave enough time for the browser's status refresh before shutting AP.
         for (int i = 0; i < 700; ++i) { portalDns.processNextRequest(); portalServer.handleClient(); delay(10); }
         ESP.restart();
@@ -139,6 +142,6 @@ static void handlePortal() {
     } else if (status == 503 || status == 404) {
         pairPending = false;
         portalScreenMessage = "Server nicht bereit";
-        portalMessage = "Die Testumgebung ist noch nicht für die Einrichtung bereit. Bitte später erneut versuchen.";
+        portalMessage = "Der Server ist noch nicht für die Einrichtung bereit. Bitte später erneut versuchen.";
     }
 }

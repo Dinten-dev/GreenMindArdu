@@ -1,5 +1,5 @@
 /**
- * Explicit test firmware for new/provisioned Biolingo ESP32-S3 devices.
+ * Explicit Direct/DUAL firmware for new/provisioned Biolingo ESP32-S3 devices.
  * Existing production firmware is untouched. No OTA or automatic migration.
  * ADC input: Biolingo v22 AD8232 on GPIO4; 380 Hz, mono PCM16 comparison.
  * ADS131M04 drivers can submit interleaved SampleBlock PCM24 independently.
@@ -93,7 +93,7 @@ static bool sendDirect(const SampleBlock& block) {
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
     for (uint8_t i = 0; i < block.channels; ++i) labels.add(String("CH") + String(i + 1));
     metadata["calibration_version"] = block.sampleBits == 16 ? "unsigned-mv-linear-int16-v1" : "raw-adc-counts-v1";
-    metadata["firmware_version"] = "direct-hotspot-v2.4";
+    metadata["firmware_version"] = greenmind::cloud::firmwareVersion;
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
@@ -252,13 +252,13 @@ static void provision(const String& line) {
     String gw = doc["gateway"] | "";
     if (requested == Mode::Invalid || String(doc["ssid"] | "").isEmpty() ||
         ((requested == Mode::Direct || requested == Mode::Dual) &&
-         (!url.startsWith("https://") || !url.endsWith("/api/v1/direct-ingest/chunks") ||
+         (!greenmind::cloud::acceptsEndpoint(url.c_str()) ||
           ca.indexOf("BEGIN CERTIFICATE") < 0 || String(doc["token"] | "").length() != 80 ||
           String(doc["device_id"] | "").length() != 36)) ||
         ((requested == Mode::Gateway || requested == Mode::Dual) && !gw.startsWith("http://"))) {
         Serial.println("provision_invalid_configuration"); return;
     }
-    preferences.begin("gmdirect", false);
+    preferences.begin(greenmind::cloud::preferencesNamespace, false);
     for (const char* key : {"transport", "ssid", "password", "endpoint", "token", "device_id", "ca", "gateway"})
         preferences.putString(key, doc[key] | "");
     preferences.remove("pair_code");
@@ -270,10 +270,10 @@ static void provision(const String& line) {
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("firmware=direct-hotspot-v2.4");
+    Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
     StatusDisplay::init();
     makeSessionId();
-    preferences.begin("gmdirect", true);
+    preferences.begin(greenmind::cloud::preferencesNamespace, true);
     mode = greenmind::parseMode(preferences.getString("transport", "GATEWAY").c_str());
     ssid = preferences.getString("ssid");
     password = preferences.getString("password");
@@ -287,12 +287,12 @@ void setup() {
     preferences.end();
     pinMode(0, INPUT_PULLUP);
     const bool directValid = token.length() == 80 && deviceId.length() == 36 &&
-        endpoint.startsWith("https://") && certificate.indexOf("BEGIN CERTIFICATE") >= 0;
+        greenmind::cloud::acceptsEndpoint(endpoint.c_str()) && certificate.indexOf("BEGIN CERTIFICATE") >= 0;
     configured = ssid.length() && pairingCode.isEmpty() &&
         ((mode == Mode::Direct && directValid) || (mode == Mode::Gateway && gateway.startsWith("http://")) ||
          (mode == Mode::Dual && directValid && gateway.startsWith("http://")));
     if (!configured) { startPortal(); return; }
-    StatusDisplay::show("START", "WLAN verbinden...", "test.green-mind.ch", "Warte auf Verbindung", "");
+    StatusDisplay::show("START", "WLAN verbinden...", greenmind::cloud::host, "Warte auf Verbindung", "");
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -317,7 +317,7 @@ static void updateStatusDisplay() {
             millis() - lastDirectAckMs.load(std::memory_order_relaxed) < 30000;
         const char* state = !wifiOk ? "WLAN: verbinden..." : !hasClock.load() ? "Uhrzeit wird gesetzt" :
             mode == Mode::Gateway ? "Gateway-Modus" : recentAck ? "Cloud: Daten OK" : "Cloud: warte auf ACK";
-        StatusDisplay::show("SENSOR", state, "test.green-mind.ch",
+        StatusDisplay::show("SENSOR", state, greenmind::cloud::host,
             "Verlust: " + String(directDropped.load() + timingDropped.load()), "BOOT 5s: WLAN-Setup");
     }
 }
@@ -334,7 +334,7 @@ void loop() {
     } else {
         heldSince = 0;
         if (reopenPortal) {
-            preferences.begin("gmdirect", false);
+            preferences.begin(greenmind::cloud::preferencesNamespace, false);
             preferences.putString("ssid", "");
             preferences.end();
             ESP.restart();
