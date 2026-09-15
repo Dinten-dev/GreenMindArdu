@@ -9,9 +9,25 @@ an image only; it does not flash or distribute firmware. The example uses a
 separate large-app partition layout and has no OTA integration. Do not install
 it through the old OTA path or flash an existing production device implicitly.
 
-## Configuration
+## Hotspot setup on Staging
 
-Configuration is accepted over local USB serial as one JSON line. Secrets go
+An unconfigured sensor starts `GreenMind-Sensor-XXXX` and displays the network
+name and `192.168.4.1` on its SSD1306 OLED (SDA GPIO13, SCL GPIO12, address 0x3C).
+Connect a phone to the hotspot, open the portal, and enter a 2.4-GHz Wi-Fi name,
+Wi-Fi password, and the six-character **Direct** pairing code from Staging.
+This requires the new Direct dashboard/backend routes to be deployed and enabled;
+legacy Gateway codes do not become Direct credentials just because their length
+matches. Previously issued eight-character Direct codes remain accepted.
+Hold BOOT for five seconds and release it to reopen setup. Reconfiguration keeps
+the device credential and requires a new Direct code for the same organization
+and zone. The OLED shows setup/connection state; `Cloud: Daten OK` appears only
+after a verified upload acknowledgement. Neither the display nor serial logs
+show Wi-Fi passwords, pairing codes, or device tokens. No PC/USB monitor is
+required to start the display or hotspot.
+
+## Operator USB configuration
+
+Configuration is also accepted over local USB serial as one JSON line. Secrets go
 into a separate NVS namespace `gmdirect`; they are never printed or compiled
 into source. NVS encryption and hardware secure-element provisioning are outside
 this test build. The operator must protect physical provisioning access.
@@ -41,7 +57,8 @@ The supplied acquisition task reads Biolingo AD8232 on GPIO4 at nominal 380 Hz,
 with explicit detection of missed deadlines. It rounds to tenths of millivolts
 before both transports, then applies the exact existing Gateway PCM16 mapping.
 The new build is for transport comparison, not a replacement for the existing
-firmware's filters, display, captive portal or OTA behaviour.
+firmware's filters or OTA behaviour. Hotspot setup and OLED status are implemented
+separately for this test build.
 
 Acquisition owns the sample buffer. Separate queues copy blocks by value, so
 network retries cannot read an overwritten rotating acquisition buffer. Each

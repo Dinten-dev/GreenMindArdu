@@ -15,6 +15,7 @@
 #include <sys/time.h>
 
 #include "../../../direct_transport/DirectCore.h"
+#include "StatusDisplay.h"
 
 using greenmind::Mode;
 using greenmind::SampleBlock;
@@ -30,6 +31,8 @@ static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
 static bool configured = false;
+static std::atomic<uint32_t> lastDirectAckMs{0};
+static std::atomic<bool> directAcknowledged{false};
 static String provisionLine;
 
 static void makeSessionId() {
@@ -42,6 +45,8 @@ static void makeSessionId() {
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
+
+#include "SetupPortal.h"
 
 static String sha256(const uint8_t* data, size_t length) {
     uint8_t digest[32];
@@ -84,7 +89,7 @@ static bool sendDirect(const SampleBlock& block) {
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
     for (uint8_t i = 0; i < block.channels; ++i) labels.add(String("CH") + String(i + 1));
     metadata["calibration_version"] = block.sampleBits == 16 ? "unsigned-mv-linear-int16-v1" : "raw-adc-counts-v1";
-    metadata["firmware_version"] = "direct-test-v1";
+    metadata["firmware_version"] = "direct-hotspot-v2.2";
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
@@ -111,6 +116,10 @@ static bool sendDirect(const SampleBlock& block) {
                 ack["sequence"].as<uint64_t>() == block.sequence &&
                 ack["payload_sha256"].as<String>() == digest;
         }
+    }
+    if (acknowledged) {
+        lastDirectAckMs.store(millis(), std::memory_order_relaxed);
+        directAcknowledged.store(true, std::memory_order_release);
     }
     // Never print the URL, authorization header, response body or provisioning.
     Serial.printf("direct_upload status=%d ack=%d sequence=%llu\n", status, acknowledged, block.sequence);
@@ -236,6 +245,7 @@ static void provision(const String& line) {
     preferences.begin("gmdirect", false);
     for (const char* key : {"transport", "ssid", "password", "endpoint", "token", "device_id", "ca", "gateway"})
         preferences.putString(key, doc[key] | "");
+    preferences.remove("pair_code");
     preferences.end();
     Serial.println("provision_saved_restarting");
     delay(100);
@@ -244,6 +254,7 @@ static void provision(const String& line) {
 
 void setup() {
     Serial.begin(115200);
+    StatusDisplay::init();
     makeSessionId();
     preferences.begin("gmdirect", true);
     mode = greenmind::parseMode(preferences.getString("transport", "GATEWAY").c_str());
@@ -255,9 +266,16 @@ void setup() {
     deviceId.toLowerCase();
     certificate = preferences.getString("ca");
     gateway = preferences.getString("gateway");
+    pairingCode = preferences.getString("pair_code");
     preferences.end();
-    configured = ssid.length() && mode != Mode::Invalid;
-    if (!configured) { Serial.println("provision_via_usb_json_required"); return; }
+    pinMode(0, INPUT_PULLUP);
+    const bool directValid = token.length() == 80 && deviceId.length() == 36 &&
+        endpoint.startsWith("https://") && certificate.indexOf("BEGIN CERTIFICATE") >= 0;
+    configured = ssid.length() && pairingCode.isEmpty() &&
+        ((mode == Mode::Direct && directValid) || (mode == Mode::Gateway && gateway.startsWith("http://")) ||
+         (mode == Mode::Dual && directValid && gateway.startsWith("http://")));
+    if (!configured) { startPortal(); return; }
+    StatusDisplay::show("START", "WLAN verbinden...", "test.green-mind.ch", "Warte auf Verbindung", "");
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -269,7 +287,42 @@ void setup() {
     xTaskCreatePinnedToCore(acquisition, "adc-acquisition", 4096, nullptr, 2, nullptr, 1);
 }
 
+static void updateStatusDisplay() {
+    static uint32_t lastDraw = 0;
+    if (millis() - lastDraw < 1000) return;
+    lastDraw = millis();
+    if (portalActive) {
+        StatusDisplay::show("SETUP", portalName, "192.168.4.1", portalScreenMessage,
+            pairPending ? "Bitte warten..." : "Mit Handy verbinden");
+    } else if (configured) {
+        const bool wifiOk = WiFi.status() == WL_CONNECTED;
+        const bool recentAck = directAcknowledged.load(std::memory_order_acquire) &&
+            millis() - lastDirectAckMs.load(std::memory_order_relaxed) < 30000;
+        const char* state = !wifiOk ? "WLAN: verbinden..." : !hasClock.load() ? "Uhrzeit wird gesetzt" :
+            mode == Mode::Gateway ? "Gateway-Modus" : recentAck ? "Cloud: Daten OK" : "Cloud: warte auf ACK";
+        StatusDisplay::show("SENSOR", state, "test.green-mind.ch",
+            "Verlust: " + String(directDropped.load() + timingDropped.load()), "BOOT 5s: WLAN-Setup");
+    }
+}
+
 void loop() {
+    handlePortal();
+    updateStatusDisplay();
+    // Hold BOOT for five seconds to change WLAN via the local portal.
+    static uint32_t heldSince = 0;
+    static bool reopenPortal = false;
+    if (digitalRead(0) == LOW) {
+        if (!heldSince) heldSince = millis();
+        if (millis() - heldSince > 5000 && !portalActive) reopenPortal = true;
+    } else {
+        heldSince = 0;
+        if (reopenPortal) {
+            preferences.begin("gmdirect", false);
+            preferences.putString("ssid", "");
+            preferences.end();
+            ESP.restart();
+        }
+    }
     while (Serial.available()) {
         char value = static_cast<char>(Serial.read());
         if (value == '\n') { provision(provisionLine); provisionLine = ""; }
@@ -279,6 +332,9 @@ void loop() {
     static uint32_t lastStatus = 0;
     if (millis() - lastStatus > 10000) {
         lastStatus = millis();
+        Serial.printf("sensor_alive uptime_ms=%lu display=%s hotspot=%d clients=%u wifi=%d\n",
+            millis(), StatusDisplay::ready() ? "ready" : "unavailable", portalActive,
+            portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
     }
