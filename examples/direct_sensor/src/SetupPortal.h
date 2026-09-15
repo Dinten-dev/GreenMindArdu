@@ -2,6 +2,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 #include "StagingTrust.h"
+#include "PairingCode.h"
 
 static DNSServer portalDns;
 static WebServer portalServer(80);
@@ -60,9 +61,12 @@ static void startPortal() {
             portalServer.send(400, "text/plain", "Bitte Formular erneut ausfuellen."); return;
         }
         String code = portalServer.arg("code"); code.trim(); code.toUpperCase();
-        bool valid = code.length() == 6 || code.length() == 8;
-        for (unsigned i = 0; i < code.length(); ++i) valid &= isalnum(code[i]);
-        if (!valid) { portalServer.send(400, "text/plain", "Bitte den 6- oder 8-stelligen Sensor-Code eingeben."); return; }
+        if (!greenmind::validPairingCode(code.c_str(), code.length())) {
+            portalMessage = "Bitte den 6- oder 8-stelligen Sensor-Code eingeben: nur Buchstaben und Ziffern.";
+            portalScreenMessage = "Sensor-Code pruefen";
+            portalPage();
+            return;
+        }
         ssid = portalServer.arg("ssid"); password = portalServer.arg("password"); pairingCode = code;
         if (deviceId.length() != 36 || token.length() != 80) {
             makeSessionId(); deviceId = sessionId; makeSessionId();

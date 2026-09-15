@@ -1,4 +1,5 @@
 #include "../../direct_transport/DirectCore.h"
+#include "../../examples/direct_sensor/src/PairingCode.h"
 #include <cassert>
 #include <iostream>
 #include <fstream>
@@ -6,6 +7,32 @@
 
 int main(int argc, char** argv) {
     using namespace greenmind;
+    assert(validPairingCode("A2BC34", 6));
+    assert(validPairingCode("AB23CD45", 8));
+    assert(validPairingCode("123456", 6));
+    assert(validPairingCode("ABCDEFGH", 8));
+    assert(!validPairingCode(nullptr, 6));
+    assert(!validPairingCode("", 0));
+    assert(!validPairingCode("ABCDE", 5));
+    assert(!validPairingCode("ABCDEFG", 7));
+    assert(!validPairingCode("ABCDEFGHI", 9));
+    assert(!validPairingCode("AB 234", 6));
+    assert(!validPairingCode("AB-234", 6));
+    assert(!validPairingCode("ABC\0EF", 6));
+    // Exercise every byte at every accepted position, including digit bitmasks
+    // and non-ASCII input that must not depend on locale or signed-char ctype.
+    for (std::size_t length : {6u, 8u}) {
+        std::string candidate(length, 'A');
+        for (std::size_t pos = 0; pos < length; ++pos) {
+            for (int value = 0; value < 256; ++value) {
+                candidate[pos] = static_cast<char>(value);
+                const bool expected = (value >= 'A' && value <= 'Z') ||
+                                      (value >= '0' && value <= '9');
+                assert(validPairingCode(candidate.data(), length) == expected);
+            }
+            candidate[pos] = 'A';
+        }
+    }
     assert(parseMode(nullptr) == Mode::Gateway);
     assert(parseMode("") == Mode::Gateway);
     assert(parseMode("DIRECT") == Mode::Direct);
@@ -53,5 +80,5 @@ int main(int argc, char** argv) {
         while (!stressed.push(source)) std::this_thread::yield();
     }
     consumer.join();
-    std::cout << "PASS: modes, PCM16/24, bounded ownership, 10000 concurrent blocks\n";
+    std::cout << "PASS: pairing codes, modes, PCM16/24, bounded ownership, 10000 concurrent blocks\n";
 }

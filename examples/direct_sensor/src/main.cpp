@@ -89,7 +89,7 @@ static bool sendDirect(const SampleBlock& block) {
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
     for (uint8_t i = 0; i < block.channels; ++i) labels.add(String("CH") + String(i + 1));
     metadata["calibration_version"] = block.sampleBits == 16 ? "unsigned-mv-linear-int16-v1" : "raw-adc-counts-v1";
-    metadata["firmware_version"] = "direct-hotspot-v2.2";
+    metadata["firmware_version"] = "direct-hotspot-v2.3";
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
