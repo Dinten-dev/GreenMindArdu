@@ -13,6 +13,10 @@ jobs:
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread tests/direct_transport/test_core.cpp -o /tmp/direct-core-test
           /tmp/direct-core-test
+      - name: Test truthful upload display states
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_upload_status.cpp -o /tmp/upload-status-test
+          /tmp/upload-status-test
       - name: Test isolated Staging and Production targets
         run: |
           for flags in "" "-DGREENMIND_CLOUD_PRODUCTION=1"; do

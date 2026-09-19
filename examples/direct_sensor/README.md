@@ -20,7 +20,7 @@ legacy Gateway codes do not become Direct credentials just because their length
 matches. Previously issued eight-character Direct codes remain accepted.
 Hold BOOT for five seconds and release it to reopen setup. Reconfiguration keeps
 the device credential and requires a new Direct code for the same organization
-and zone. The OLED shows setup/connection state; `Cloud: Daten OK` appears only
+and zone. The OLED shows setup/connection state; `TEST CLOUD OK` / `LIVE CLOUD OK` appears only
 after a verified upload acknowledgement. Neither the display nor serial logs
 show Wi-Fi passwords, pairing codes, or device tokens. No PC/USB monitor is
 required to start the display or hotspot.
@@ -126,3 +126,25 @@ the repository's pinned clang-format 18.1.8 rules. Only formatting in those two
 existing files was corrected for develop. Their C++ token sequences were checked
 to be identical, and the existing security tests and firmware build were rerun.
 No sensor was flashed and no existing firmware logic was changed.
+
+## Informative OLED status (v2.6)
+
+The header identifies TEST/LIVE and CLOUD/GW. `OK` requires a validated upload
+acknowledgement less than 3.5 seconds old; its activity mark changes with the
+acknowledged packet count. `LANGSAM` means 3.5–10 seconds without confirmation,
+`KEIN OK` means at least ten seconds. Wi-Fi loss, time synchronization and failed
+uploads have explicit states; a successful HTTP code with an invalid acknowledgement
+is still a failure. There is no claim that Gateway acknowledgement proves Cloud arrival.
+
+On the two-colour SSD1306, the heading stays within the yellow top 16 pixels;
+all five status rows start in the blue area and fit within 64 pixels.
+Five persistent rows show Wi-Fi RSSI and 380 Hz sampling, measured confirmation
+interval versus the one-second target, age of the latest acknowledgement, confirmed
+packet count and request duration (or the failed HTTP/client status), and lost
+samples plus failed attempts since boot. The measured interval is smoothed over
+recent acknowledgements and hidden when stale or when fewer than two have arrived.
+The final row abbreviates failed attempts as `E`. Counts use k/M/G suffixes for long runs. Failures can recover through retry; they
+are not automatically lost samples. Loss combines the selected path and sampling
+timing losses. DUAL rotates independent CLOUD/GW pages every six seconds, marked D.
+Settings and BOOT-to-setup behaviour are retained. Only the main loop draws to
+the OLED; acquisition and both upload tasks remain independent.

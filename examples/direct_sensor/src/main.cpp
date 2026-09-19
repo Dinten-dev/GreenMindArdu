@@ -16,6 +16,7 @@
 
 #include "../../../direct_transport/DirectCore.h"
 #include "StatusDisplay.h"
+#include "UploadStatus.h"
 
 using greenmind::Mode;
 using greenmind::SampleBlock;
@@ -31,8 +32,7 @@ static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
 static bool configured = false;
-static std::atomic<uint32_t> lastDirectAckMs{0};
-static std::atomic<bool> directAcknowledged{false};
+static greenmind::UploadStatus directStatus, gatewayStatus;
 static String provisionLine;
 
 static void makeSessionId() {
@@ -99,7 +99,10 @@ static bool sendDirect(const SampleBlock& block) {
     serializeJson(metadata, header);
     transport.setCACert(certificate.c_str());
     transport.setHandshakeTimeout(10);
-    if (!http.begin(transport, endpoint)) return false;
+    if (!http.begin(transport, endpoint)) {
+        directStatus.record(false, -1, millis(), 0);
+        return false;
+    }
     http.setReuse(true);
     http.setConnectTimeout(5000);
     http.setTimeout(10000);
@@ -122,10 +125,7 @@ static bool sendDirect(const SampleBlock& block) {
                 ack["payload_sha256"].as<String>() == digest;
         }
     }
-    if (acknowledged) {
-        lastDirectAckMs.store(millis(), std::memory_order_relaxed);
-        directAcknowledged.store(true, std::memory_order_release);
-    }
+    directStatus.record(acknowledged, status, millis(), millis() - started);
     // Never print the URL, authorization header, response body or provisioning.
     Serial.printf("direct_upload status=%d ack=%d sequence=%llu elapsed_ms=%lu reused=%d heap=%u\n",
         status, acknowledged, block.sequence, millis() - started, reused, ESP.getFreeHeap());
@@ -159,6 +159,7 @@ static bool sendGateway(const SampleBlock& block) {
     http.setConnectTimeout(3000);
     http.setTimeout(5000);
     http.addHeader("Content-Type", "application/json");
+    const uint32_t started = millis();
     int status = http.POST(payload);
     bool acknowledged = false;
     if ((status == 200 || status == 201) && http.getSize() >= 0 && http.getSize() <= 1024) {
@@ -169,6 +170,7 @@ static bool sendGateway(const SampleBlock& block) {
                 (ack["status"] == "queued" || ack["status"] == "duplicate");
         }
     }
+    gatewayStatus.record(acknowledged, status, millis(), millis() - started);
     http.end();
     return acknowledged;
 }
@@ -313,12 +315,13 @@ static void updateStatusDisplay() {
             pairPending ? "Bitte warten..." : "Mit Handy verbinden");
     } else if (configured) {
         const bool wifiOk = WiFi.status() == WL_CONNECTED;
-        const bool recentAck = directAcknowledged.load(std::memory_order_acquire) &&
-            millis() - lastDirectAckMs.load(std::memory_order_relaxed) < 30000;
-        const char* state = !wifiOk ? "WLAN: verbinden..." : !hasClock.load() ? "Uhrzeit wird gesetzt" :
-            mode == Mode::Gateway ? "Gateway-Modus" : recentAck ? "Cloud: Daten OK" : "Cloud: warte auf ACK";
-        StatusDisplay::show("SENSOR", state, greenmind::cloud::host,
-            "Verlust: " + String(directDropped.load() + timingDropped.load()), "BOOT 5s: WLAN-Setup");
+        // In DUAL mode show both independent paths, six seconds per page.
+        const bool cloudPage = mode == Mode::Direct ||
+            (mode == Mode::Dual && (millis() / 6000) % 2 == 0);
+        const auto stats = (cloudPage ? directStatus : gatewayStatus).snapshot();
+        const uint32_t lost = (cloudPage ? directDropped.load() : gatewayDropped.load()) + timingDropped.load();
+        StatusDisplay::showTelemetry(cloudPage, mode == Mode::Dual, wifiOk,
+            !cloudPage || hasClock.load(), wifiOk ? WiFi.RSSI() : 0, stats, lost, millis());
     }
 }
 
@@ -354,6 +357,11 @@ void loop() {
             portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
+        const auto status = directStatus.snapshot();
+        Serial.printf("display_upload acks=%u interval_ms=%u age_ms=%u errors=%u http=%d\n",
+            status.acknowledgements, status.intervalMs,
+            status.acknowledgements ? millis() - status.lastAckMs : 0,
+            status.failures, status.result);
     }
     delay(10);
 }

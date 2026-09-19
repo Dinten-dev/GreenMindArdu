@@ -53,3 +53,52 @@ void StatusDisplay::show(const char* title, const String& first, const String& s
     line(53, fourth);
     screen.display();
 }
+
+namespace {
+String elapsedLabel(uint32_t ms) {
+    if (ms < 60000) return String(ms / 1000) + "s";
+    if (ms < 3600000) return String(ms / 60000) + "min";
+    return String(ms / 3600000) + "h";
+}
+String compactCount(uint32_t count) {
+    if (count < 10000) return String(count);
+    if (count < 1000000) return String(count / 1000) + "k";
+    if (count < 1000000000) return String(count / 1000000) + "M";
+    return String(count / 1000000000) + "G";
+}
+}
+
+void StatusDisplay::showTelemetry(bool cloud, bool dual, bool wifi, bool clockReady,
+                                  int rssi, const greenmind::UploadSnapshot& status,
+                                  uint32_t lost, uint32_t now) {
+    if (!displayReady) return;
+    screen.clearDisplay();
+    screen.setTextColor(SSD1306_WHITE);
+    screen.setTextSize(1);
+    screen.setTextWrap(false);
+#ifdef GREENMIND_CLOUD_PRODUCTION
+    const char* environment = "LIVE";
+#else
+    const char* environment = "TEST";
+#endif
+    const char* state = greenmind::uploadState(status, wifi, clockReady, now);
+    const bool fresh = status.acknowledgements && now - status.lastAckMs < 3500;
+    const char* route = cloud ? "CLOUD" : "GW";
+    // The activity mark changes only with acknowledged uploads.
+    String title = String(environment) + " " + route + " " + state;
+    if (String(state) == "OK") title += status.acknowledgements % 2 ? " >" : " *";
+    line(0, title);
+    screen.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+    // Two-colour SSD1306: rows 0-15 yellow, 16-63 blue.
+    line(17, wifi ? "WLAN " + String(rssi) + "dBm 380Hz" : "WLAN verbindet...");
+    line(27, "Takt " + (fresh && status.acknowledgements > 1 ?
+        (status.intervalMs < 10000 ? String(status.intervalMs / 1000.0f, 1) + "s" : elapsedLabel(status.intervalMs)) : String("--")) + " / Ziel 1s");
+    line(37, status.acknowledgements ? "Letztes OK " +
+        elapsedLabel(now - status.lastAckMs) + " her" : "Noch kein Empfang OK");
+    line(47, !status.lastSucceeded && status.failures ?
+        "HTTP " + String(status.result) + " Err " + compactCount(status.failures) :
+        "OK " + compactCount(status.acknowledgements) + " | " + String(status.durationMs) + "ms");
+    line(56, "Verlust " + compactCount(lost) + " E:" + compactCount(status.failures) +
+        (dual ? " D" : ""));
+    screen.display();
+}
