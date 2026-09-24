@@ -1,5 +1,7 @@
 # GreenMind ESP32 Sensor Firmware
 
+[Direct-to-Cloud: Mac download, USB flashing and dashboard pairing](docs/DIRECT-TO-CLOUD-ANLEITUNG.md).
+
 Field candidate, corrected USB flash layout, and the three firmware choices:
 [25 September 2026 greenhouse checklist](docs/GREENHOUSE-2026-09-25.md).
 
