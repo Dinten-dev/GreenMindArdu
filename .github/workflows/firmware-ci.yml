@@ -6,12 +6,14 @@ on:
       - ".clang-format"
       - ".github/workflows/firmware-ci.yml"
       - "GreenMindFirmware_Biolingo/**"
+      - "transport_validation/**"
       - "tests/**"
   pull_request:
     paths:
       - ".clang-format"
       - ".github/workflows/firmware-ci.yml"
       - "GreenMindFirmware_Biolingo/**"
+      - "transport_validation/**"
       - "tests/**"
 
 permissions:

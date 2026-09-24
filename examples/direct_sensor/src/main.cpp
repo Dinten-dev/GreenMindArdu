@@ -15,6 +15,7 @@
 #include <sys/time.h>
 
 #include "../../../direct_transport/DirectCore.h"
+#include "../../../transport_validation/Acknowledgement.h"
 #include "StatusDisplay.h"
 #include "UploadStatus.h"
 
@@ -117,12 +118,8 @@ static bool sendDirect(const SampleBlock& block) {
     if ((status == 200 || status == 201) && http.getSize() >= 0 && http.getSize() <= 1024) {
         JsonDocument ack;
         if (!deserializeJson(ack, http.getString())) {
-            const String state = ack["status"].as<String>();
-            acknowledged = (state == "persisted" || state == "duplicate") &&
-                ack["device_id"].as<String>() == deviceId &&
-                ack["session_id"].as<String>() == sessionId &&
-                ack["sequence"].as<uint64_t>() == block.sequence &&
-                ack["payload_sha256"].as<String>() == digest;
+            acknowledged = greenmind::directAcknowledged(ack.as<JsonVariantConst>(),
+                deviceId.c_str(), sessionId, block.sequence, digest.c_str());
         }
     }
     directStatus.record(acknowledged, status, millis(), millis() - started);
@@ -165,9 +162,9 @@ static bool sendGateway(const SampleBlock& block) {
     if ((status == 200 || status == 201) && http.getSize() >= 0 && http.getSize() <= 1024) {
         JsonDocument ack;
         if (!deserializeJson(ack, http.getString())) {
-            acknowledged = ack["sequence"].as<uint32_t>() == static_cast<uint32_t>(block.sequence) &&
-                ack["samples_archived"].as<uint32_t>() == block.frames &&
-                (ack["status"] == "queued" || ack["status"] == "duplicate");
+            acknowledged = greenmind::gatewayAcknowledged(ack.as<JsonVariantConst>(),
+                static_cast<uint32_t>(strtoul(sessionId, nullptr, 16)),
+                static_cast<uint32_t>(block.sequence), block.frames);
         }
     }
     gatewayStatus.record(acknowledged, status, millis(), millis() - started);

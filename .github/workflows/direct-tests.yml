@@ -33,3 +33,7 @@ jobs:
       - run: python -m pip install platformio==6.1.19
       - name: Compile separate Staging and Production firmware
         run: platformio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_biolingo_production
+      - name: Test typed acknowledgements and long-running retry clock
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I examples/direct_sensor/.pio/libdeps/direct_biolingo_production/ArduinoJson/src tests/direct_transport/test_acknowledgement.cpp -o /tmp/acknowledgement-test
+          /tmp/acknowledgement-test

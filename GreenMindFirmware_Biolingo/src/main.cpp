@@ -41,6 +41,7 @@
 #include "display.h"
 #include "measurement_batch.h"
 #include "sensor_spool.h"
+#include "../../transport_validation/Acknowledgement.h"
 
 // ── Pin Configuration (Biolingo v22) ──────────
 static const int ADC_PIN = 4;      // IO4, ADC1_CH3
@@ -847,7 +848,7 @@ bool sendBatch(const SensorBatch& batch) {
     String gatewayAddress = currentGatewayAddress();
     if (WiFi.status() != WL_CONNECTED || gatewayAddress.isEmpty())
         return false;
-    if (static_cast<int32_t>(millis() - nextGatewayUploadAttemptMs) < 0)
+    if (greenmind::retryPending(millis(), nextGatewayUploadAttemptMs))
         return false;
 
     static JsonDocument doc;
@@ -895,10 +896,8 @@ bool sendBatch(const SensorBatch& batch) {
     if (code == 200 || code == 201) {
         JsonDocument acknowledgment;
         if (deserializeJson(acknowledgment, responseBody) != DeserializationError::Ok ||
-            !acknowledgment["boot_id"].is<uint32_t>() ||
-            !acknowledgment["sequence"].is<uint32_t>() ||
-            acknowledgment["boot_id"].as<uint32_t>() != batch.bootId ||
-            acknowledgment["sequence"].as<uint32_t>() != batch.sequence) {
+            !greenmind::gatewayAcknowledged(acknowledgment.as<JsonVariantConst>(), batch.bootId,
+                                            batch.sequence, batch.sampleCount)) {
             streamErrors++;
             lastSendOk = false;
             nextGatewayUploadAttemptMs = millis() + gatewayUploadBackoffMs;
