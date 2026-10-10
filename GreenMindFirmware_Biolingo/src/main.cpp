@@ -5,12 +5,12 @@
  * Board:    Biolingo v22 (KiCad Rev v22)
  *
  * Features:
- *   - BLE setup for WiFi provisioning
+ *   - Local hotspot setup with gateway-bound dashboard code
  *   - 380 Hz ADC sampling with low-pass and 50 Hz notch filtering
  *   - AD8232 lead-off detection + artifact flagging
  *   - Batch POST to gateway (/api/v1/ingest, 380 samples/s)
  *   - Gateway discovery: cached IP → UDP broadcast → subnet scan
- *   - OTA firmware updates via local Raspberry Pi gateway
+ *   - Manual USB releases; OTA disabled for this download
  *   - SSD1306 OLED status display (MAC, WiFi, GW, TX, lead-off)
  *
  * Pin Mapping (Biolingo v22 schematic):
@@ -30,7 +30,10 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiProv.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include "../../transport_validation/PairingCode.h"
+#include "../../transport_validation/SignalDisplayStats.h"
 #include <HTTPClient.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>
@@ -82,6 +85,10 @@ String gatewayIP;
 String macAddress;
 
 bool isProvisioned = false;
+static WebServer setupServer(80);
+static DNSServer setupDns;
+static String setupNonce;
+static uint32_t setupButtonHeldAt = 0;
 
 // ── Sampling Buffers & Queues ─────────────────
 using SensorBatch = MeasurementBatch;
@@ -158,16 +165,6 @@ void IRAM_ATTR onSamplingTimer();
 String currentGatewayAddress();
 void updateGatewayAddress(const String& address);
 
-// ── Helpers für BLE Provisioning ──────────────
-String generatePairingCode() {
-    static const char alphabet[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    String code = "";
-    for (int i = 0; i < 6; i++) {
-        code += alphabet[esp_random() % (sizeof(alphabet) - 1)];
-    }
-    return code;
-}
-
 // ══════════════════════════════════════════════
 //  SETUP & LOOP
 // ══════════════════════════════════════════════
@@ -176,7 +173,7 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     bootId = esp_random();
-    Serial.printf("\n[Biolingo] Booting v%s (OTA enabled)\n", FIRMWARE_VERSION);
+    Serial.printf("\n[Biolingo] Booting v%s (manual USB release)\n", FIRMWARE_VERSION);
     Serial.printf("[Biolingo] Flash: %u MB, PSRAM: %u MB\n",
                   static_cast<unsigned>(ESP.getFlashChipSize() / (1024 * 1024)),
                   static_cast<unsigned>(ESP.getPsramSize() / (1024 * 1024)));
@@ -212,7 +209,11 @@ void setup() {
 
     // Open Wi-Fi networks legitimately have an empty passphrase. A persisted
     // SSID is the provisioning marker; WiFi.begin handles open networks.
-    isProvisioned = (wifiSSID.length() > 0);
+    prefs.begin("gm", true);
+    const bool requestedSetup = prefs.getBool("setup", false);
+    prefs.end();
+    isProvisioned = wifiSSID.length() > 0 && !requestedSetup;
+    pinMode(0, INPUT_PULLUP);
 
     Serial.printf("[Biolingo] MAC: %s  Provisioned: %s\n", macAddress.c_str(),
                   isProvisioned ? "yes" : "no");
@@ -229,29 +230,41 @@ void setup() {
 }
 
 void loop() {
-    if (!isProvisioned) {
-        if (WiFi.status() == WL_CONNECTED && wifiSSID.length() == 0) {
-            wifiSSID = WiFi.SSID();
-            wifiPass = WiFi.psk();
-            Serial.printf("[Biolingo] Provisioned successfully! SSID: %s\n", wifiSSID.c_str());
-            saveConfig();
-            delay(1000);
-            ESP.restart();
+    if (isProvisioned) {
+        if (digitalRead(0) == LOW) {
+            if (!setupButtonHeldAt)
+                setupButtonHeldAt = millis();
+        } else if (setupButtonHeldAt) {
+            const bool openSetup = millis() - setupButtonHeldAt >= 5000;
+            setupButtonHeldAt = 0;
+            if (openSetup) {
+                prefs.begin("gm", false);
+                prefs.putBool("setup", true);
+                prefs.end();
+                ESP.restart();
+            }
         }
+    }
+    if (!isProvisioned) {
+        setupDns.processNextRequest();
+        setupServer.handleClient();
         if (millis() - setupModeStartTime > 300000) {
             Serial.println("[Biolingo] 5 min timeout. Rebooting...");
             ESP.restart();
         }
-        delay(100);
+        delay(5);
     } else {
         String gatewayAddress = currentGatewayAddress();
-        if (displayUpdatePending) {
+        static uint32_t lastDisplayUpdate = 0;
+        if (displayUpdatePending || millis() - lastDisplayUpdate >= 500) {
+            lastDisplayUpdate = millis();
             displayUpdatePending = false;
             Display::showStreaming(macAddress, WiFi.status() == WL_CONNECTED,
                                    gatewayAddress.length() > 0, lastSendOk, streamErrors,
-                                   currentLeadOff, latestBatchMean);
+                                   currentLeadOff, latestBatchMean, SignalDisplayStats::read());
         }
 
+#if GREENMIND_ENABLE_OTA
         // Periodic OTA check
         if (WiFi.status() == WL_CONNECTED && gatewayAddress.length() > 0 &&
             millis() - lastOtaCheck > OTA_CHECK_INTERVAL) {
@@ -260,6 +273,7 @@ void loop() {
             Display::showOtaCheck();
             GreenMindOTA::checkAndUpdate(gatewayAddress);
         }
+#endif
     }
 }
 
@@ -321,24 +335,58 @@ void factoryReset() {
 }
 
 // ══════════════════════════════════════════════
-//  SETUP MODE (BLE Provisioning)
+//  SETUP MODE (local hotspot and dashboard verification code)
 // ══════════════════════════════════════════════
 
-void startSetupMode() {
-    Serial.println("[Biolingo] Starting Setup Mode (BLE Provisioning)");
+static void setupPage() {
+    String html =
+        R"HTML(<!doctype html><html lang="de"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GreenMind Gateway-Sensor</title><h1>Gateway-Sensor verbinden</h1><p>WLAN und Sensor-Verifizierungscode aus dem Dashboard eingeben. Der Code gehört zur Zone des Gateways.</p><form method="post" action="/save"><label>WLAN <input name="ssid" maxlength="32" required></label><br><label>Passwort <input type="password" name="password" maxlength="63"></label><br><label>Sensor-Code <input name="code" minlength="6" maxlength="8" required></label>)HTML";
+    html += "<input type='hidden' name='nonce' value='" + setupNonce +
+            "'><button>Verbinden</button></form>";
+    setupServer.sendHeader("Cache-Control", "no-store");
+    setupServer.send(200, "text/html; charset=utf-8", html);
+}
 
+void startSetupMode() {
     String suffix = macAddress.substring(macAddress.length() - 5);
     suffix.replace(":", "");
-    String bleName = "GM-" + suffix;
-
-    String generatedCode = generatePairingCode();
-    Serial.printf("[Biolingo] BLE provisioning name: %s\n", bleName.c_str());
-
-    Display::showBleProvisioning(bleName, generatedCode);
-
+    String name = "GreenMind-Sensor-" + suffix;
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(name.c_str());
+    setupNonce = String(esp_random(), HEX) + String(esp_random(), HEX);
+    setupDns.start(53, "*", WiFi.softAPIP());
+    setupServer.on("/", HTTP_GET, setupPage);
+    setupServer.on("/save", HTTP_POST, []() {
+        String code = setupServer.arg("code");
+        code.trim();
+        code.toUpperCase();
+        const String nextSsid = setupServer.arg("ssid");
+        const String nextPassword = setupServer.arg("password");
+        if (setupServer.arg("nonce") != setupNonce || nextSsid.isEmpty() ||
+            nextSsid.length() > 32 || nextPassword.length() > 63 ||
+            !greenmind::validPairingCode(code.c_str(), code.length())) {
+            setupServer.send(400, "text/plain; charset=utf-8", "WLAN und Sensor-Code pruefen.");
+            return;
+        }
+        wifiSSID = nextSsid;
+        wifiPass = nextPassword;
+        pairingCode = code;
+        saveConfig();
+        prefs.begin("gm", false);
+        prefs.remove("setup");
+        prefs.end();
+        setupServer.send(
+            200, "text/html; charset=utf-8",
+            "<p>Einrichtung gespeichert. Der Sensor verbindet sich ueber das Gateway. BOOT fuenf "
+            "Sekunden halten und loslassen oeffnet die Einrichtung erneut.</p>");
+        delay(1000);
+        ESP.restart();
+    });
+    setupServer.onNotFound(setupPage);
+    setupServer.begin();
+    Display::showHotspotSetup(name);
     setupModeStartTime = millis();
-    WiFiProv.beginProvision(WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BTDM,
-                            WIFI_PROV_SECURITY_1, generatedCode.c_str(), bleName.c_str());
+    Serial.println("[Biolingo] Local hotspot setup ready at 192.168.4.1");
 }
 
 // ══════════════════════════════════════════════
@@ -373,10 +421,12 @@ void startRuntimeMode() {
                         checkGatewayHealth(gatewayAddress);
     if (gatewayReady) {
         Serial.printf("[Biolingo] Gateway at %s\n", gatewayAddress.c_str());
+#if GREENMIND_ENABLE_OTA
         Serial.println("[Biolingo] Boot OTA check...");
         Display::showOtaCheck();
         GreenMindOTA::checkAndUpdate(gatewayAddress);
         lastOtaCheck = millis();
+#endif
     } else {
         updateGatewayAddress("");
         Serial.println("[Biolingo] Gateway unavailable; discovery continues in background");
@@ -708,6 +758,7 @@ void streamReadings() {
     uint8_t lm = digitalRead(LO_MINUS_PIN);
 
     float mv = (rawAdc / 4095.0f) * ADC_VOLTAGE_REF * 1000.0f;
+    SignalDisplayStats::record(static_cast<uint16_t>(rawAdc * 33000UL / 4095));
     float filteredMv = applyNotch(applyFilter(mv));
     uint8_t flags = FLAG_VALID;
     bool isInvalid = false;

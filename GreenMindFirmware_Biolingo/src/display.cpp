@@ -81,30 +81,24 @@ void Display::showBoot(const String& mac) {
 
     // Version
     oled.setCursor(0, 56);
-    oled.printf("FW: %s  OTA", FIRMWARE_VERSION);
+    oled.printf("FW: %s USB", FIRMWARE_VERSION);
 
     oled.display();
 }
 
-void Display::showBleProvisioning(const String& name, const String& code) {
+void Display::showHotspotSetup(const String& name) {
     if (!displayReady)
         return;
     clearScreen();
-
-    oled.setTextSize(2);
-    centerText("BLE", 0);
-    centerText("Setup", 16);
-
-    oled.setTextSize(1);
-    drawSeparator(34);
-
-    oled.setCursor(0, 38);
+    oled.print("SETUP / GATEWAY");
+    oled.setCursor(0, 17);
     oled.print(name);
-
-    oled.setCursor(0, 50);
-    oled.print("Code: ");
-    oled.print(code);
-
+    oled.setCursor(0, 29);
+    oled.print("192.168.4.1");
+    oled.setCursor(0, 41);
+    oled.print("WLAN + Sensor-Code");
+    oled.setCursor(0, 53);
+    oled.print("Code aus Dashboard");
     oled.display();
 }
 
@@ -177,7 +171,8 @@ void Display::showOtaUpdate(const String& newVersion) {
 }
 
 void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk, bool sendOk, int errorCount,
-                            bool leadOff, float currentMv) {
+                            bool leadOff, float currentMv,
+                            const SignalDisplayStats::Snapshot& voltage) {
     if (!displayReady)
         return;
     clearScreen();
@@ -192,7 +187,10 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk, bool send
 
     // MAC address
     oled.setCursor(0, 12);
-    oled.print(mac);
+    String suffix = mac;
+    suffix.replace(":", "");
+    suffix.toLowerCase();
+    oled.print("ID " + suffix.substring(suffix.length() - 4));
 
     // WiFi + Gateway status
     oled.setCursor(0, 24);
@@ -204,24 +202,18 @@ void Display::showStreaming(const String& mac, bool wifiOk, bool gwOk, bool send
 
     drawSeparator(33);
 
-    // Streaming status + live mV value
+    // Last completed second of nominal, unfiltered ADC-output voltage.
+    (void)currentMv;
     oled.setCursor(0, 36);
-    oled.print("TX:");
-    oled.print(sendOk ? "OK" : "ERR");
-
-    // Live mV value, right-aligned (always shown, even during lead-off)
-    char mvBuf[12];
-    snprintf(mvBuf, sizeof(mvBuf), "%.1fmV", currentMv);
-    int mvLen = strlen(mvBuf);
-    int mvX = OLED_WIDTH - mvLen * 6; // 6px per char at textSize 1
-    if (mvX < 42)
-        mvX = 42; // Don't overlap TX status
-    oled.setCursor(mvX, 36);
-    oled.print(mvBuf);
+    if (voltage.fresh(millis()))
+        oled.printf("U %umV %u-%u", voltage.meanDeciMv / 10, voltage.minDeciMv / 10,
+                    voltage.maxDeciMv / 10);
+    else
+        oled.print("U --mV -- --");
 
     // Error count + Lead-off indicator
     oled.setCursor(0, 48);
-    oled.printf("Err:%-3d", errorCount);
+    oled.printf("TX:%s Err:%d", sendOk ? "OK" : "ERR", errorCount);
 
     oled.setCursor(64, 48);
     oled.print("LO:");

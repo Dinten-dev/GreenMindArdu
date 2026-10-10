@@ -9,6 +9,7 @@
 #define GREENMIND_DISPLAY_H
 
 #include <Arduino.h>
+#include "../../transport_validation/SignalDisplayStats.h"
 
 // ── Pin Configuration ─────────────────────────
 #define OLED_SDA_PIN 13
@@ -25,8 +26,8 @@ bool init();
 /// Boot screen: firmware version + MAC address.
 void showBoot(const String& mac);
 
-/// Setup mode: BLE Provisioning
-void showBleProvisioning(const String& name, const String& code);
+/// Local hotspot setup with gateway sensor code.
+void showHotspotSetup(const String& name);
 
 /// WiFi connecting screen.
 void showConnecting(const String& ssid);
@@ -40,7 +41,7 @@ void showOtaUpdate(const String& newVersion);
 
 /// Main streaming status screen (called once per batch send).
 void showStreaming(const String& mac, bool wifiOk, bool gwOk, bool sendOk, int errorCount,
-                   bool leadOff, float currentMv);
+                   bool leadOff, float currentMv, const SignalDisplayStats::Snapshot& voltage = {});
 
 /// Error / reboot screen.
 void showError(const String& line1, const String& line2);

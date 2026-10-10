@@ -70,7 +70,8 @@ String compactCount(uint32_t count) {
 
 void StatusDisplay::showTelemetry(bool cloud, bool dual, bool wifi, bool clockReady,
                                   int rssi, const greenmind::UploadSnapshot& status,
-                                  uint32_t lost, uint32_t now) {
+                                  uint32_t lost, uint32_t now, uint16_t meanDeciMv, uint16_t minDeciMv, uint16_t maxDeciMv,
+                                  bool sampleFresh, const String& sensorId) {
     if (!displayReady) return;
     screen.clearDisplay();
     screen.setTextColor(SSD1306_WHITE);
@@ -90,11 +91,12 @@ void StatusDisplay::showTelemetry(bool cloud, bool dual, bool wifi, bool clockRe
     line(0, title);
     screen.drawFastHLine(0, 10, 128, SSD1306_WHITE);
     // Two-colour SSD1306: rows 0-15 yellow, 16-63 blue.
-    line(17, wifi ? "WLAN " + String(rssi) + "dBm 380Hz" : "WLAN verbindet...");
-    line(27, "Takt " + (fresh && status.acknowledgements > 1 ?
-        (status.intervalMs < 10000 ? String(status.intervalMs / 1000.0f, 1) + "s" : elapsedLabel(status.intervalMs)) : String("--")) + " / Ziel 1s");
-    line(37, status.acknowledgements ? "Letztes OK " +
-        elapsedLabel(now - status.lastAckMs) + " her" : "Noch kein Empfang OK");
+    // Nominal ADC-output voltage, not a calibrated electrode differential voltage.
+    line(17, sensorId + (wifi ? " WLAN " + String(rssi) + "dBm" : " WLAN wartet"));
+    line(27, sampleFresh ? "U " + String(meanDeciMv / 10) + "mV " + String(minDeciMv / 10) + "-" + String(maxDeciMv / 10) : "U --mV -- --");
+    line(37, "Takt " + (fresh && status.acknowledgements > 1 ?
+        (status.intervalMs < 10000 ? String(status.intervalMs / 1000.0f, 1) + "s" : elapsedLabel(status.intervalMs)) : String("--")) +
+        " OK " + (status.acknowledgements ? elapsedLabel(now - status.lastAckMs) : String("--")));
     line(47, !status.lastSucceeded && status.failures ?
         "HTTP " + String(status.result) + " Err " + compactCount(status.failures) :
         "OK " + compactCount(status.acknowledgements) + " | " + String(status.durationMs) + "ms");
