@@ -1,8 +1,7 @@
 # Explicit Direct / DUAL sensor build
 
 This folder is a separate PlatformIO project for new, explicitly provisioned
-Biolingo v22 ESP32-S3 sensors. `GreenMindFirmware_Biolingo` and its existing
-configuration, partition table and firmware behaviour remain untouched.
+Biolingo v22 ESP32-S3 sensors. The Gateway sensor is built separately in `GreenMindFirmware_Biolingo`; neither target updates an installed sensor automatically.
 
 Build with `platformio run --project-dir examples/direct_sensor`. This creates
 an image only; it does not flash or distribute firmware. The example uses a
@@ -138,13 +137,23 @@ is still a failure. There is no claim that Gateway acknowledgement proves Cloud 
 
 On the two-colour SSD1306, the heading stays within the yellow top 16 pixels;
 all five status rows start in the blue area and fit within 64 pixels.
-Five persistent rows show Wi-Fi RSSI and 380 Hz sampling, measured confirmation
-interval versus the one-second target, age of the latest acknowledgement, confirmed
-packet count and request duration (or the failed HTTP/client status), and lost
-samples plus failed attempts since boot. The measured interval is smoothed over
+As of v2.8, five persistent rows show the latest nominal ADC voltage in mV,
+Wi-Fi RSSI and 380 Hz sampling, measured confirmation interval and acknowledgement
+age together (`Takt 1.0s OK 0s`), confirmed packet count and request duration (or
+the failed HTTP/client status), and lost samples plus failed attempts since boot.
+The display refreshes every 500 ms. `ADC --.-mV` means acquisition has not started
+or the latest sample is at least two seconds old. The voltage uses the same
+unfiltered ADC sample and nominal 0–3300 mV conversion as the uploaded recording;
+it is the amplifier output, not a calibrated differential electrode voltage.
+No extra ADC read or smoothing is introduced. The one-second upload target and
+380 Hz sampling rate remain unchanged. The measured interval is smoothed over
 recent acknowledgements and hidden when stale or when fewer than two have arrived.
 The final row abbreviates failed attempts as `E`. Counts use k/M/G suffixes for long runs. Failures can recover through retry; they
 are not automatically lost samples. Loss combines the selected path and sampling
 timing losses. DUAL rotates independent CLOUD/GW pages every six seconds, marked D.
 Settings and BOOT-to-setup behaviour are retained. Only the main loop draws to
 the OLED; acquisition and both upload tasks remain independent.
+
+## Manual v2.8 OLED update
+
+The OLED shows sensor MAC suffix and mean/minimum/maximum of the most recent completed 380-sample second, in mV. It observes the existing ADC values; calibration, sampling, filtering, pairing, data payload, retry/spool, endpoint and ACK validation remain unchanged. Stale readings display `--`. No OTA distribution is provided.

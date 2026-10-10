@@ -24,8 +24,17 @@ class FirmwareSecurityInvariantTests(unittest.TestCase):
     def test_open_wifi_network_counts_as_provisioned(self) -> None:
         main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("isProvisioned = (wifiSSID.length() > 0);", main)
+        self.assertIn("isProvisioned = wifiSSID.length() > 0 && !requestedSetup;", main)
         self.assertNotIn("wifiSSID.length() > 0 && wifiPass.length() > 0", main)
+
+    def test_manual_gateway_setup_uses_local_form_and_dashboard_code(self) -> None:
+        main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")
+        platformio = (FIRMWARE / "platformio.ini").read_text(encoding="utf-8")
+        self.assertNotIn("WiFiProv", main)
+        self.assertIn("WebServer setupServer(80)", main)
+        self.assertIn("greenmind::validPairingCode", main)
+        self.assertIn('prefs.putString("code",', main)
+        self.assertIn("GREENMIND_ENABLE_OTA=0", platformio)
 
     def test_batch_ownership_returns_only_after_upload(self) -> None:
         main = (FIRMWARE / "src" / "main.cpp").read_text(encoding="utf-8")

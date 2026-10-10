@@ -6,7 +6,7 @@ Field candidate, corrected USB flash layout, and the three firmware choices:
 [25 September 2026 greenhouse checklist](docs/GREENHOUSE-2026-09-25.md).
 
 🎥 **Video Presentation:** [Watch our showcase at the Science Exhibition](https://youtu.be/OdKqk1Vc4Uo?si=9BqRJsJWqswzQC3o) — A short introduction to what we have discovered so far.
-> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a two-stage digital filter (20 Hz EMA lowpass + 50 Hz biquad notch), sends data to the Raspberry Pi Gateway via HTTP POST, provisions Wi-Fi over BLE, and supports OTA firmware updates.
+> C++ firmware (PlatformIO/Arduino) for GreenMind bioelectric plant sensors on ESP32-S3. Captures bioelectrical signals at **380 Hz** with a two-stage digital filter (20 Hz EMA lowpass + 50 Hz biquad notch), sends data to the Raspberry Pi Gateway via HTTP POST, uses a local Wi-Fi hotspot and dashboard verification code for setup. Current releases are installed manually over USB.
 
 > **⚠️ R&D Status:** Part of the [GreenMind](https://github.com/Dinten-dev/GreenMindDB) research platform by **Galaxyadvisors AG** in collaboration with FHNW.
 
@@ -70,7 +70,7 @@ Plant → AD8232 → GPIO (ADC) → 380 Hz timer → EMA LP → Notch 50Hz → m
 
 | Directory | Board | Framework | Features |
 |-----------|-------|-----------|----------|
-| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | OTA updates, OLED display, BLE Wi-Fi provisioning, 380 Hz streaming, AD8232 artifact detection |
+| `GreenMindFirmware_Biolingo/` | ESP32-S3 (Biolingo v22) | PlatformIO | Manual USB installation, OLED second statistics, local hotspot setup, dashboard verification code, 380 Hz streaming |
 
 > 📦 Archived ESP32-WROOM variants are retained in `archive/`. The root `GreenMind/` directory is a clearly marked legacy MicroPython prototype and is not part of the production build.
 
@@ -145,8 +145,7 @@ GreenMindArdu/
 ## Flashing
 
 The active target is **ESP32-S3-WROOM-1-N16R8**. The first v1.1.0 installation
-must use USB because it replaces the flash partition table. Later application
-updates can use OTA normally.
+must use USB because it replaces the flash partition table. The current v1.2.0 download disables OTA checks. Install future downloads manually over USB.
 
 ### Reviewed local flash
 
@@ -179,14 +178,17 @@ pio device monitor
 
 ## Provisioning and Pairing
 
-The firmware contains no build-time Wi-Fi credentials. A device without valid NVS credentials uses the runtime provisioning flow:
+The firmware contains no build-time Wi-Fi credentials. For Gateway sensors:
 
-1. The sensor advertises over BLE as `GM-XXXX`, where `XXXX` is the final four hexadecimal characters of its MAC address.
-2. The OLED displays a six-character proof-of-possession code generated from the ESP32 hardware random-number source; serial logs do not expose it.
-3. An Espressif-compatible Security 1 provisioning client supplies the Wi-Fi SSID and password using that BLE name and proof-of-possession.
-4. The firmware stores the provisioned network in NVS, restarts, discovers the gateway, and begins streaming.
+1. Register the Raspberry Pi Gateway with its dashboard verification code.
+2. Generate a **Gateway sensor code** in that Gateway's dashboard.
+3. Connect to the sensor hotspot `GreenMind-Sensor-XXXX`.
+4. Open `http://192.168.4.1`, enter Wi-Fi and that sensor code.
+5. The sensor discovers the Gateway and submits the code to its existing local registration endpoint.
 
-Cloud sensor association is a separate existing flow. If a dashboard pairing code is present in NVS, the firmware submits it once to `POST /api/v1/sensors/register` through the gateway and then clears it. The current BLE Wi-Fi provisioning callback does not itself populate that dashboard pairing code; gateway/dashboard automation must account for this distinction.
+Hold BOOT for five seconds, then release, to reopen setup. Existing NVS credentials and pending measurement spool are retained. Direct sensors keep their separate Direct dashboard codes, endpoint and credential namespace.
+
+See [Gateway manual download and setup](docs/GATEWAY-MANUAL-1.2.0.md) and [Direct manual installation](docs/DIRECT-TO-CLOUD-ANLEITUNG.md).
 
 ---
 
@@ -204,12 +206,7 @@ The discovered IP is cached in NVS for subsequent boots.
 
 ## OTA Updates
 
-The firmware supports over-the-air updates via the Raspberry Pi Gateway:
-
-1. The sensor checks the gateway's `/api/v1/ota/check` endpoint at boot and every hour.
-2. It validates that the supplied SHA-256 is a 64-character hexadecimal digest.
-3. It rejects missing, short, oversized, timed-out, or hash-mismatched downloads and aborts the inactive OTA partition.
-4. Only a length- and SHA-256-verified image is finalized as bootable; the next boot is reported to the gateway.
+Current Gateway v1.2.0 and Direct v2.8 downloads are **manual USB releases**. No OTA release, rollout, dashboard assignment, or installed-device update is triggered by publishing them. `GREENMIND_ENABLE_OTA=0` disables Gateway sensor OTA checks. Existing OTA implementation and partition layout are retained for source compatibility and testing.
 
 The custom `partitions.csv` allocates dual OTA slots and a durable LittleFS spool:
 ```
@@ -234,7 +231,7 @@ any missed timer notifications remain explicit data-quality gaps.
 
 ## Reset Behavior
 
-The active firmware does not expose an inbound HTTP reset endpoint. Deleting a cloud sensor therefore does not erase device NVS. Reset or reprovision a device through an authorized local flashing/erase workflow until a coordinated authenticated control protocol is implemented across sensor, gateway, and backend.
+The active firmware does not expose an inbound HTTP reset endpoint. Deleting a cloud sensor therefore does not erase device NVS. Hold BOOT for five seconds and release to enter the local hotspot form. This preserves NVS and pending measurements; it does not erase the sensor.
 
 ---
 

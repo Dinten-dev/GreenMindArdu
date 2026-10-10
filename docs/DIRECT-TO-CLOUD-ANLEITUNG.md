@@ -2,13 +2,12 @@
 
 Für **Biolingo v22 / AD8232 / ESP32-S3 mit 16 MB Flash**.
 Ziel: **Production unter https://green-mind.ch**.
-Firmware: `direct-hotspot-v2.7-production`, Quellcommit
-`ae645ebc8a6818f37d1e6c39e37ea47c669f5760`.
+Firmware: `direct-hotspot-v2.8-production`, Quellstand und Binär-Prüfsummen stehen im Paketmanifest. Die Installation erfolgt ausschließlich manuell; bestehende Sensoren erhalten kein OTA-Update.
 
 ## 1. Firmware direkt von GitHub herunterladen
 
-[Geprüftes Firmware-Paket auf GitHub](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/field-2026-09-25)
-· [Production-ZIP herunterladen](https://github.com/Dinten-dev/GreenMindArdu/releases/download/field-2026-09-25/direct-production-2.7.zip)
+[Geprüftes Firmware-Paket auf GitHub](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/manual-2026-10-10)
+· [Production-ZIP herunterladen](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-production-2.8.zip)
 · [Quellcode auf main](https://github.com/Dinten-dev/GreenMindArdu/tree/main)
 
 Das Paket enthält vier Binärdateien, `manifest.json` und eine Feldanleitung.
@@ -25,7 +24,7 @@ Zunächst eine eigene Arbeitsumgebung erstellen:
 
 ```bash
 python3.12 --version
-GM_FLASH_DIR=$(mktemp -d "$HOME/GreenMind-Direct-2.7.XXXXXX")
+GM_FLASH_DIR=$(mktemp -d "$HOME/GreenMind-Direct-2.8.XXXXXX")
 cd "$GM_FLASH_DIR"
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -40,8 +39,8 @@ import hashlib
 from pathlib import Path
 from urllib.request import urlopen
 from zipfile import ZipFile
-base = 'https://github.com/Dinten-dev/GreenMindArdu/releases/download/field-2026-09-25/'
-name = 'direct-production-2.7.zip'
+base = 'https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/'
+name = 'direct-production-2.8.zip'
 for filename in ('SHA256SUMS', name):
     with urlopen(base + filename, timeout=120) as response:
         Path(filename).write_bytes(response.read())
@@ -110,7 +109,8 @@ import hashlib, json
 from pathlib import Path
 m = json.loads(Path('manifest.json').read_text())
 assert m['environment'] == 'direct_biolingo_production'
-assert m['source_commit'] == 'ae645ebc8a6818f37d1e6c39e37ea47c669f5760'
+assert m['version'] == 'direct-hotspot-v2.8-production'
+assert m['distribution'] == 'manual-usb-only'
 assert {f['file']: f['offset'] for f in m['files']} == {
     'bootloader.bin': '0x0', 'partitions.bin': '0x8000',
     'boot_app0.bin': '0xe000', 'firmware.bin': '0x10000',

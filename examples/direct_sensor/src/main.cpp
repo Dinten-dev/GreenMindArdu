@@ -35,6 +35,8 @@ static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{
 static bool configured = false;
 static greenmind::UploadStatus directStatus, gatewayStatus;
 static String provisionLine;
+// Display-only snapshot of the same unfiltered sample sent to the cloud.
+#include "../../../transport_validation/SignalDisplayStats.h"
 
 static void makeSessionId() {
     uint8_t bytes[16];
@@ -229,6 +231,7 @@ static void acquisition(void*) {
             timingDropped.fetch_add(static_cast<uint32_t>(missed));
         }
         const uint16_t deciMv = static_cast<uint16_t>(std::lround(analogRead(4) * (33000.0 / 4095.0)));
+        SignalDisplayStats::record(deciMv);
         if (!acquisitionBlock.frames) acquisitionBlock.firstFrame = frame;
         const uint16_t index = acquisitionBlock.frames++;
         acquisitionBlock.gatewayDeciMv[index] = deciMv;
@@ -305,7 +308,7 @@ void setup() {
 
 static void updateStatusDisplay() {
     static uint32_t lastDraw = 0;
-    if (millis() - lastDraw < 1000) return;
+    if (millis() - lastDraw < 500) return;
     lastDraw = millis();
     if (portalActive) {
         StatusDisplay::show("SETUP", portalName, "192.168.4.1", portalScreenMessage,
@@ -317,8 +320,17 @@ static void updateStatusDisplay() {
             (mode == Mode::Dual && (millis() / 6000) % 2 == 0);
         const auto stats = (cloudPage ? directStatus : gatewayStatus).snapshot();
         const uint32_t lost = (cloudPage ? directDropped.load() : gatewayDropped.load()) + timingDropped.load();
+        const uint32_t now = millis();
+        const auto voltage = SignalDisplayStats::read();
+        static String sensorId;
+        if (sensorId.isEmpty()) {
+            sensorId = WiFi.macAddress(); sensorId.replace(":", "");
+            sensorId = sensorId.substring(sensorId.length() - 4); sensorId.toLowerCase();
+        }
         StatusDisplay::showTelemetry(cloudPage, mode == Mode::Dual, wifiOk,
-            !cloudPage || hasClock.load(), wifiOk ? WiFi.RSSI() : 0, stats, lost, millis());
+            !cloudPage || hasClock.load(), wifiOk ? WiFi.RSSI() : 0, stats, lost, now,
+            voltage.meanDeciMv, voltage.minDeciMv, voltage.maxDeciMv,
+            voltage.fresh(now), sensorId);
     }
 }
 
