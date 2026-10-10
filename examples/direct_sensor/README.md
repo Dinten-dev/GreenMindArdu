@@ -1,4 +1,4 @@
-# Explicit Direct / DUAL sensor build
+# Direct firmware and explicit DUAL development
 
 This folder is a separate PlatformIO project for new, explicitly provisioned
 Biolingo v22 ESP32-S3 sensors. The Gateway sensor is built separately in `GreenMindFirmware_Biolingo`; neither target updates an installed sensor automatically.
@@ -8,12 +8,12 @@ an image only; it does not flash or distribute firmware. The example uses a
 separate large-app partition layout and has no OTA integration. Do not install
 it through the old OTA path or flash an existing production device implicitly.
 
-## Hotspot setup on Staging
+## Hotspot setup (selected environment)
 
 An unconfigured sensor starts `GreenMind-Sensor-XXXX` and displays the network
 name and `192.168.4.1` on its SSD1306 OLED (SDA GPIO13, SCL GPIO12, address 0x3C).
 Connect a phone to the hotspot, open the portal, and enter a 2.4-GHz Wi-Fi name,
-Wi-Fi password, and the six-character **Direct** pairing code from Staging.
+Wi-Fi password, and the six-character **Direct** pairing code from the selected dashboard.
 This requires the new Direct dashboard/backend routes to be deployed and enabled;
 legacy Gateway codes do not become Direct credentials just because their length
 matches. Previously issued eight-character Direct codes remain accepted.
@@ -36,7 +36,7 @@ separate Direct activation. Returning to Staging retains its previous pairing.
 Neither compilation nor a develop push flashes or upgrades devices automatically.
 Serial provisioning also rejects an endpoint belonging to the other environment.
 
-For DUAL, install a reviewed GreenMindRPIv1 **develop** commit supporting protocol
+For DUAL, install a reviewed GreenMindRPIv1 release commit supporting protocol
 v3 on the participating Pi first. Its `/api/v1/health` must advertise
 `ingest_protocol_versions: [1, 2, 3]` and `sequence_acknowledgement: true`.
 The hotspot pairs DIRECT mode; DUAL remains explicit operator provisioning with
@@ -75,8 +75,7 @@ Never put Staging tokens into a Production build or vice versa.
 The supplied acquisition task reads Biolingo AD8232 on GPIO4 at nominal 380 Hz,
 with explicit detection of missed deadlines. It rounds to tenths of millivolts
 before both transports, then applies the exact existing Gateway PCM16 mapping.
-The new build is for transport comparison, not a replacement for the existing
-firmware's filters or OTA behaviour. Hotspot setup and OLED status are implemented
+Direct uses unfiltered nominal ADC output; it does not reproduce the Gateway sensor filters. Hotspot setup and OLED status are implemented
 separately for this test build.
 
 Acquisition owns the sample buffer. Separate queues copy blocks by value, so
@@ -117,16 +116,7 @@ An optional output filename writes all 33,001 in-range deci-millivolt encodings
 for the backend's comparison against the unchanged Gateway WAV writer.
 
 No production push or flashing is authorized by building or passing these tests.
-# Staging CI follow-up, 12 September 2026
-
-The existing firmware CI also failed on the published main baseline because
-`GreenMindFirmware_Biolingo/src/main.cpp` and `src/sensor_spool.cpp` did not match
-the repository's pinned clang-format 18.1.8 rules. Only formatting in those two
-existing files was corrected for develop. Their C++ token sequences were checked
-to be identical, and the existing security tests and firmware build were rerun.
-No sensor was flashed and no existing firmware logic was changed.
-
-## Informative OLED status (v2.6)
+## OLED status in the manual v2.8 release
 
 The header identifies TEST/LIVE and CLOUD/GW. `OK` requires a validated upload
 acknowledgement less than 3.5 seconds old; its activity mark changes with the
@@ -137,14 +127,12 @@ is still a failure. There is no claim that Gateway acknowledgement proves Cloud 
 
 On the two-colour SSD1306, the heading stays within the yellow top 16 pixels;
 all five status rows start in the blue area and fit within 64 pixels.
-As of v2.8, five persistent rows show the latest nominal ADC voltage in mV,
-Wi-Fi RSSI and 380 Hz sampling, measured confirmation interval and acknowledgement
-age together (`Takt 1.0s OK 0s`), confirmed packet count and request duration (or
-the failed HTTP/client status), and lost samples plus failed attempts since boot.
-The display refreshes every 500 ms. `ADC --.-mV` means acquisition has not started
-or the latest sample is at least two seconds old. The voltage uses the same
-unfiltered ADC sample and nominal 0–3300 mV conversion as the uploaded recording;
-it is the amplifier output, not a calibrated differential electrode voltage.
+Five rows show sensor MAC suffix and Wi-Fi RSSI; last-second mean/min/max in mV;
+confirmation interval and acknowledgement age (`Takt 1.0s OK 0s`); confirmed
+packet count and request duration (or failed HTTP/client status); and lost
+samples plus failed attempts since boot. Stale voltage displays `U --mV -- --`.
+The voltage observes the same unfiltered samples and nominal 0–3300 mV conversion
+as the uploaded recording; it is amplifier output, not calibrated electrode voltage.
 No extra ADC read or smoothing is introduced. The one-second upload target and
 380 Hz sampling rate remain unchanged. The measured interval is smoothed over
 recent acknowledgements and hidden when stale or when fewer than two have arrived.
