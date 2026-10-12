@@ -71,7 +71,8 @@ String compactCount(uint32_t count) {
 void StatusDisplay::showTelemetry(bool cloud, bool dual, bool wifi, bool clockReady,
                                   int rssi, const greenmind::UploadSnapshot& status,
                                   uint32_t lost, uint32_t now, uint16_t meanDeciMv, uint16_t minDeciMv, uint16_t maxDeciMv,
-                                  bool sampleFresh, const String& sensorId) {
+                                  bool sampleFresh, const String& sensorId,
+                                  uint32_t spoolUsed, uint32_t spoolCapacity, bool psram) {
     if (!displayReady) return;
     screen.clearDisplay();
     screen.setTextColor(SSD1306_WHITE);
@@ -97,7 +98,11 @@ void StatusDisplay::showTelemetry(bool cloud, bool dual, bool wifi, bool clockRe
     line(37, "Takt " + (fresh && status.acknowledgements > 1 ?
         (status.intervalMs < 10000 ? String(status.intervalMs / 1000.0f, 1) + "s" : elapsedLabel(status.intervalMs)) : String("--")) +
         " OK " + (status.acknowledgements ? elapsedLabel(now - status.lastAckMs) : String("--")));
-    line(47, !status.lastSucceeded && status.failures ?
+    if (cloud && (now / 3000) % 2 == 0) {
+        line(47, String(psram ? "Puffer " : "RAM! ") +
+            String(spoolCapacity ? uint64_t(spoolUsed) * 100 / spoolCapacity : 0) +
+            "% max " + String(spoolCapacity / 784) + "s");
+    } else line(47, !status.lastSucceeded && status.failures ?
         "HTTP " + String(status.result) + " Err " + compactCount(status.failures) :
         "OK " + compactCount(status.acknowledgements) + " | " + String(status.durationMs) + "ms");
     line(56, "Verlust " + compactCount(lost) + " E:" + compactCount(status.failures) +

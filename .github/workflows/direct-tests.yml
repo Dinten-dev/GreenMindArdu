@@ -17,6 +17,10 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_upload_status.cpp -o /tmp/upload-status-test
           /tmp/upload-status-test
+      - name: Test retained PCM through outages and counter rollover
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined tests/direct_transport/test_pcm_spool.cpp -o /tmp/pcm-spool-test
+          /tmp/pcm-spool-test
       - name: Test isolated Staging and Production targets
         run: |
           for flags in "" "-DGREENMIND_CLOUD_PRODUCTION=1"; do
@@ -32,7 +36,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: python -m pip install platformio==6.1.19
       - name: Compile separate Staging and Production firmware
-        run: platformio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_biolingo_production
+        run: platformio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_biolingo_production -e direct_biolingo_v22_psram_test -e direct_biolingo_v22_psram_production
       - name: Test typed acknowledgements and long-running retry clock
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror -I examples/direct_sensor/.pio/libdeps/direct_biolingo_production/ArduinoJson/src tests/direct_transport/test_acknowledgement.cpp -o /tmp/acknowledgement-test

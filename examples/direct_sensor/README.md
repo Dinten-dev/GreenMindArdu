@@ -1,5 +1,50 @@
 # Direct firmware and explicit DUAL development
 
+## v2.9-rc1 PSRAM store-and-forward candidate
+
+The explicit `direct_biolingo_v22_psram_test` and
+`direct_biolingo_v22_psram_production` targets select the existing Biolingo v22
+N16R8 board definition (16 MB flash, octal PSRAM). Verify the actual module
+marking and detected PSRAM before flashing. This is a test candidate, not a
+field-qualified release. No automatic flashing or OTA is provided.
+
+Acquisition stores compact PCM records in a bounded SPSC byte ring. Each record
+remains in the ring while uploading and retrying; it is released only after the
+existing device/session/sequence/SHA-256 acknowledgement validation succeeds.
+One sensor task owns writes and one uploader owns reads. No dynamic allocation,
+network wait, extra ADC reading or filter was added to acquisition. Gateway/DUAL
+delivery remains independent and retains its existing separate queue.
+
+At startup the allocator preserves at least 1 MiB free PSRAM and chooses a
+power-of-two ring up to 4 MiB, respecting the largest free block. With a 4 MiB
+allocation, full 380 Hz mono PCM16 blocks have 5,349 seconds nominal capacity
+(about 89 minutes). Partial blocks and other formats change that duration.
+No PSRAM means an explicitly labelled 32 KiB RAM fallback (41 nominal seconds)
+if internal heap headroom permits; otherwise recording does not start and an
+allocation error is shown. A fallback is not accepted for the 120-second field
+test. RAM/PSRAM contents do not survive reset or power loss.
+
+The display alternates upload diagnostics with buffer fill and nominal maximum
+seconds. Serial output exposes buffer bytes, capacity, PSRAM selection, upload
+failures and acquisition/transport losses without credentials. A full ring
+rejects new blocks, preserving older unacknowledged data and incrementing the
+existing lost-frame counter. No finite buffer promises unlimited outage survival.
+
+Host tests cover a 120-second simulated upload outage spanning a ten-minute
+boundary, 1,400 seconds of contiguous samples, repeated/wrong acknowledgements,
+full-buffer ownership, 100,000 concurrent records, mixed PCM24 records and
+uint32 counter rollover after more than 4 GiB of transport. Hardware acceptance
+still requires: actual PSRAM detection, 120 seconds Wi-Fi/server interruption,
+zero new lost samples, complete verified cloud replay across multiple segment
+boundaries, and stable heap during TLS recovery. Keep the previous application
+and NVS pairing data for manual rollback.
+
+Sampling remains 380 Hz with the existing nominal ADC-output calibration.
+The HPK comparison uses a different stored stream (400 Hz acquisition, onboard
+low-pass/notch filtering, four-sample averaging to 100 Hz and mV-times-ten PCM).
+Noise conclusions require original aligned recordings and the actual measurement
+setup; the screenshot alone does not identify a hardware or ADC cause.
+
 This folder is a separate PlatformIO project for new, explicitly provisioned
 Biolingo v22 ESP32-S3 sensors. The Gateway sensor is built separately in `GreenMindFirmware_Biolingo`; neither target updates an installed sensor automatically.
 

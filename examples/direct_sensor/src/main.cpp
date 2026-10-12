@@ -11,10 +11,12 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_timer.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <sys/time.h>
 
 #include "../../../direct_transport/DirectCore.h"
+#include "../../../direct_transport/PcmSpool.h"
 #include "../../../transport_validation/Acknowledgement.h"
 #include "StatusDisplay.h"
 #include "UploadStatus.h"
@@ -28,7 +30,8 @@ static char sessionId[37];
 static uint64_t sessionStartUs = 0;
 static std::atomic<bool> hasClock{false};
 static uint64_t sequence = 0;
-static greenmind::SpscQueue<SampleBlock, 8> directQueue;
+static greenmind::PcmSpool directQueue;
+static bool directPsram = false;
 static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
@@ -177,10 +180,15 @@ static bool sendGateway(const SampleBlock& block) {
 static void directWorker(void*) {
     uint32_t backoff = 1000;
     for (;;) {
-        if (!directQueue.pop(directPending)) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
+        if (!directQueue.peek(directPending)) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         while (!sendDirect(directPending)) {
             vTaskDelay(pdMS_TO_TICKS(backoff + esp_random() % 500));
             backoff = min(uint32_t(60000), backoff * 2);
+        }
+        if (!directQueue.acknowledge(directPending.sequence)) {
+            // An internal ownership failure must never silently discard data.
+            Serial.println("direct_spool_ack_invariant_failed");
+            for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
         }
         backoff = 1000;
     }
@@ -270,6 +278,33 @@ static void provision(const String& line) {
     ESP.restart();
 }
 
+static bool prepareDirectSpool() {
+    constexpr size_t reserve = 1024 * 1024;
+    const size_t available = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    void* memory = nullptr;
+    uint32_t bytes = 4 * 1024 * 1024;
+    if (available > reserve) {
+        while (bytes > largest || bytes > available - reserve) bytes /= 2;
+        if (bytes >= 128 * 1024)
+            memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    directPsram = memory != nullptr;
+    if (!memory) {
+        // Explicitly degraded compatibility for non-PSRAM boards. No 120s claim.
+        bytes = 32768;
+        if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >= bytes + 100 * 1024)
+            memory = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (!memory || !directQueue.begin(memory, bytes)) {
+        if (memory) heap_caps_free(memory);
+        return false;
+    }
+    Serial.printf("direct_spool kind=%s bytes=%u nominal_capacity_s=%u volatile=1\n",
+        directPsram ? "PSRAM" : "RAM_LIMITED", bytes, directQueue.capacitySeconds380());
+    return true;
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
@@ -294,6 +329,13 @@ void setup() {
         ((mode == Mode::Direct && directValid) || (mode == Mode::Gateway && gateway.startsWith("http://")) ||
          (mode == Mode::Dual && directValid && gateway.startsWith("http://")));
     if (!configured) { startPortal(); return; }
+    if ((mode == Mode::Direct || mode == Mode::Dual) && !prepareDirectSpool()) {
+        Serial.println("direct_spool_allocation_failed");
+        StatusDisplay::show("PUFFERFEHLER", "Keine Aufnahme", "Speicher fehlt",
+            "Konfiguration pruefen", "Neustart erforderlich");
+        configured = false;
+        return;
+    }
     StatusDisplay::show("START", "WLAN verbinden...", greenmind::cloud::host, "Warte auf Verbindung", "");
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
@@ -330,7 +372,8 @@ static void updateStatusDisplay() {
         StatusDisplay::showTelemetry(cloudPage, mode == Mode::Dual, wifiOk,
             !cloudPage || hasClock.load(), wifiOk ? WiFi.RSSI() : 0, stats, lost, now,
             voltage.meanDeciMv, voltage.minDeciMv, voltage.maxDeciMv,
-            voltage.fresh(now), sensorId);
+            voltage.fresh(now), sensorId,
+            directQueue.used(), directQueue.capacity(), directPsram);
     }
 }
 
@@ -366,6 +409,8 @@ void loop() {
             portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
+        Serial.printf("direct_spool_used=%u capacity=%u nominal_capacity_s=%u psram=%d\n",
+            directQueue.used(), directQueue.capacity(), directQueue.capacitySeconds380(), directPsram);
         const auto status = directStatus.snapshot();
         Serial.printf("display_upload acks=%u interval_ms=%u age_ms=%u errors=%u http=%d\n",
             status.acknowledgements, status.intervalMs,
