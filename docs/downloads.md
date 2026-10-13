@@ -1,13 +1,13 @@
 # Downloads and installation
 
-Reviewed downloads as of 10 October 2026. Sensor firmware is installed manually over USB.
+Direct downloads updated 13 October 2026; other components retain their reviewed 10 October versions. Sensor firmware is installed manually over USB.
 The Raspberry Pi package is a manual maintenance candidate with hardware acceptance pending.
 Cloud source publication does not deploy a server or activate an archive policy.
 
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
-| Direct-to-Cloud sensor, Production v2.8 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-production-2.8.zip) | [Direct USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-to-cloud.md) |
+| Direct-to-Cloud sensor, Production v2.9-rc1 / latest PSRAM candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |
 | Cloud backend and dashboard, reviewed source snapshot | [Source archive](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/GreenMindDB-source-2026-10-10.tar.gz) | [Cloud setup](https://github.com/Dinten-dev/GreenMindDB/blob/main/README.md#local-development) and [backend guide](https://github.com/Dinten-dev/GreenMindDB/blob/main/backend/README.md) |
@@ -15,7 +15,8 @@ Cloud source publication does not deploy a server or activate an archive policy.
 
 ## Verify before installation
 
-- Sensors: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/SHA256SUMS) and verify the ZIP, then each binary against its package manifest.
+- Latest Direct: use [the application-only upgrade guide](direct-upgrade.md) and [Direct SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/SHA256SUMS).
+- Historical v2.8/Gateway sensors: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/SHA256SUMS) and verify the ZIP, then each binary against its package manifest.
 - Raspberry Pi: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/SHA256SUMS); the maintenance ZIP contains its own manifest and file checksums.
 - Cloud: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/SHA256SUMS) and [source manifest](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/manifest.json). Check the exact source revision before deployment planning.
 - Complete manifests record the source revision and validation limitations. Keep each package's binaries and flash addresses together.
@@ -40,3 +41,11 @@ The Pi [release page](https://github.com/Dinten-dev/GreenMindRPIv1/releases/tag/
 also offers the reviewed full source archive. Its general installer enables the update agent;
 it is not the maintenance procedure for an existing field Gateway.
 Older field releases remain historical references. A newer source branch does not replace a checked release binary.
+
+## Maintaining the latest Direct download
+
+Direct-only releases keep immutable version assets and the dedicated `direct-latest` alias.
+For a future version, update CloudConfig.h, validate changes, and push the matching
+`direct-v<VERSION>` tag. The release workflow builds/tests the Production N16R8 app,
+publishes version assets and updates the alias, checksums and source tag.
+CI builds do not imply per-board hardware or plant-signal qualification.

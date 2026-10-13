@@ -1,3 +1,6 @@
+Download the [latest Production Direct ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)
+and follow the [application-only USB guide](../../docs/direct-upgrade.md).
+
 # Direct firmware and explicit DUAL development
 
 ## v2.9-rc1 PSRAM store-and-forward candidate
@@ -5,8 +8,8 @@
 The explicit `direct_biolingo_v22_psram_test` and
 `direct_biolingo_v22_psram_production` targets select the existing Biolingo v22
 N16R8 board definition (16 MB flash, octal PSRAM). Verify the actual module
-marking and detected PSRAM before flashing. This is a test candidate, not a
-field-qualified release. No automatic flashing or OTA is provided.
+marking and detected PSRAM before flashing. The Production application passed one-device hardware acceptance; it remains
+a release candidate and is not qualified for every board or plant measurement. No automatic flashing or OTA is provided.
 
 Acquisition stores compact PCM records in a bounded SPSC byte ring. Each record
 remains in the ring while uploading and retrying; it is released only after the
@@ -33,8 +36,7 @@ existing lost-frame counter. No finite buffer promises unlimited outage survival
 Host tests cover a 120-second simulated upload outage spanning a ten-minute
 boundary, 1,400 seconds of contiguous samples, repeated/wrong acknowledgements,
 full-buffer ownership, 100,000 concurrent records, mixed PCM24 records and
-uint32 counter rollover after more than 4 GiB of transport. Hardware acceptance
-still requires: actual PSRAM detection, 120 seconds Wi-Fi/server interruption,
+uint32 counter rollover after more than 4 GiB of transport. Other devices still require: actual PSRAM detection, 120 seconds Wi-Fi/server interruption,
 zero new lost samples, complete verified cloud replay across multiple segment
 boundaries, and stable heap during TLS recovery. Keep the previous application
 and NVS pairing data for manual rollback.
@@ -135,8 +137,8 @@ The queue boundary is `direct_transport/DirectCore.h`. It also represents signed
 acquisition task. The example does **not** implement an ADS131M04 hardware driver.
 DUAL is restricted to the common mono/380-Hz/PCM16 profile, also enforced server-side.
 
-The Direct queue holds eight waiting blocks plus one pending upload (about nine
-seconds); the Gateway queue remains four plus one (about five seconds).
+Direct now retains compact blocks in the PSRAM spool described above.
+The Gateway queue remains four plus one (about five seconds).
 The Direct worker reuses its certificate-verified HTTPS connection after reading
 and validating each acknowledgement. It closes failed/invalid responses before
 retrying the same pending block; credentials and metadata headers are refreshed
@@ -160,7 +162,7 @@ with a concurrent producer and consumer. Run a host C++17 compiler with pthreads
 An optional output filename writes all 33,001 in-range deci-millivolt encodings
 for the backend's comparison against the unchanged Gateway WAV writer.
 
-No production push or flashing is authorized by building or passing these tests.
+Publication uses an explicit version tag; building and test success alone do not flash devices.
 ## OLED status in the manual v2.8 release
 
 The header identifies TEST/LIVE and CLOUD/GW. `OK` requires a validated upload

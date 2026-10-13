@@ -2,18 +2,21 @@
 
 Manual USB firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
-Current downloads use local hotspot/web setup. Field hardware acceptance remains pending.
+Current downloads use local hotspot/web setup. Direct v2.9-rc1 PSRAM passed one-device outage/continuity checks; other boards and measurement quality require hardware acceptance.
 
 ## Download and install
 
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
-| Direct-to-Cloud sensor, Production v2.8 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-production-2.8.zip) | [Direct USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-to-cloud.md) |
+| Direct-to-Cloud sensor, Production v2.9-rc1 / latest PSRAM candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |
 | Cloud backend and dashboard, reviewed source snapshot | [Source archive](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/GreenMindDB-source-2026-10-10.tar.gz) | [Cloud setup](https://github.com/Dinten-dev/GreenMindDB/blob/main/README.md#local-development) and [backend guide](https://github.com/Dinten-dev/GreenMindDB/blob/main/backend/README.md) |
 
+
+Use the [latest Direct download and application-only USB upgrade](docs/direct-upgrade.md).
+Publishing does not update installed sensors.
 
 Follow the matching [Direct guide](docs/direct-to-cloud.md) or [Gateway sensor guide](docs/gateway-sensor.md).
 See [all downloads and checksums](docs/downloads.md). OTA is disabled in the current sensor downloads.
@@ -23,12 +26,12 @@ See [all downloads and checksums](docs/downloads.md). OTA is disabled in the cur
 | Choice | Build target | Runtime |
 | --- | --- | --- |
 | Gateway sensor v1.2.0 | `GreenMindFirmware_Biolingo` / `biolingo_v22` | 380 Hz, existing filters, durable LittleFS spool, local Gateway code |
-| Direct Production v2.8 | `examples/direct_sensor` / `direct_biolingo_production` | 380 Hz, unfiltered nominal ADC voltage, Direct cloud code |
-| Direct Staging v2.8 | `examples/direct_sensor` / `direct_biolingo_test` | Separate Staging endpoint and credentials |
+| Direct Production v2.9-rc1 | `examples/direct_sensor` / `direct_biolingo_v22_psram_production` | 380 Hz raw, volatile PSRAM store-and-forward, Direct cloud code |
+| Direct Staging source v2.9-rc1 | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical Staging acceptance pending |
 
 DUAL is an explicitly configured comparison mode, not the normal installation choice.
-Its Gateway and Direct archives remain separate. Direct has about nine seconds of RAM buffering;
-long outages or power loss can lose samples. The OLED reports sensor ID and last-second mean/min/max in mV.
+Its Gateway and Direct archives remain separate. The N16R8 Direct build uses up to 4 MiB PSRAM (about 89 minutes nominal at 380 Hz).
+Check actual reported allocation; a full buffer, reset or power loss can lose samples. The OLED reports sensor ID and last-second mean/min/max in mV.
 These are amplifier output readings, not calibrated differential electrode voltages.
 
 ## Repository layout
@@ -58,7 +61,9 @@ pio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_b
 ```
 
 Only run `./flash-sensor.sh` after reading the Gateway installation guide and backing up the target sensor.
-Native transport tests and both Direct builds run in GitHub Actions. Gateway formatting uses clang-format 18.1.8.
+Native transport tests and all four Direct builds run in GitHub Actions.
+Future `direct-v<VERSION>` tags matching CloudConfig.h publish checked Direct ZIPs
+and update the fixed `direct-latest` download; other component releases do not replace it. Gateway formatting uses clang-format 18.1.8.
 
 ## Documentation and project
 

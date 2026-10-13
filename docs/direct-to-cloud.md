@@ -1,19 +1,19 @@
 # Direct-to-Cloud: download, USB installation and pairing
 
 For Biolingo v22 / ESP32-S3 with 16 MB flash and AD8232.
-Current manual download: Direct v2.8. No Raspberry Pi is required.
+Current Production download: Direct v2.9-rc1 PSRAM candidate. No Raspberry Pi is required.
 
 ## Download and install
 
-[Production ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-production-2.8.zip) · [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/SHA256SUMS)
-· [Release](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/manual-2026-10-10).
+[Latest Production ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)
+· [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/SHA256SUMS)
+· [Current version and validation](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-latest).
 
-Follow [manual USB installation](usb-installation.md) with `GM_PACKAGE=direct-production-2.8.zip`.
-The manifest must identify `direct_biolingo_production` / `direct-hotspot-v2.8-production`.
-OTA is not enabled. Installed devices are not automatically updated by downloading or publishing this package.
-
-For Staging tests only, select `direct-staging-2.8.zip` and use `https://test.green-mind.ch`.
-Production and Staging have separate stored identities and codes.
+Follow [application-only USB upgrade](direct-upgrade.md). Preserve the installed
+partition layout and NVS; v2.9 is not the old four-image v2.8 factory package.
+The manifest identifies `direct_biolingo_v22_psram_production` and the exact version.
+Use the tested N16R8 target, verify actual PSRAM and buffer capacity after installation.
+No OTA or automatic update is enabled. Production and Staging identities remain separate.
 
 ## Pair with the cloud
 
@@ -45,9 +45,14 @@ Dashboard/read-service activation is a separate server step; report missing view
 
 ## Limits and changes
 
-v2.8 changes the OLED to sensor ID plus mean/minimum/maximum of the latest completed sample second.
-Direct acquisition, nominal voltage conversion, cloud provisioning, retry and typed acknowledgement remain unchanged.
-The displayed voltage is AD8232 output, not a calibrated differential electrode reading.
-Build and software checks passed; real display, hotspot and field acceptance remain pending.
-Direct holds about nine seconds in RAM. Longer outages or power loss can lose data;
-do not claim durable offline recording from this build.
+v2.9-rc1 stores compact PCM blocks in PSRAM until an identity-, sequence- and
+hash-checked upload acknowledgement. Capture continues during upload retries.
+Sampling remains 380 Hz raw nominal amplifier-output mV. HPK/100-Hz processing is
+an optional server derivative; the firmware does not filter or overwrite raw data.
+
+One N16R8 sensor passed a 120.384-second upload outage and 1,844 seconds of
+continuous capture across segment boundaries. With 4 MiB, nominal capacity is
+5,349 seconds; check actual allocation. RAM fallback is not PSRAM acceptance.
+Reset/power loss clears the buffer, and finite buffers can overflow.
+Other devices need their own board, PSRAM, upload and recording checks.
+The public package includes the exact hardware-tested Production application.
