@@ -1,6 +1,6 @@
 # Historical v2.8 / Gateway factory USB installation
 
-For the latest Direct firmware, use [application-only upgrade](direct-upgrade.md).
+For the latest Direct firmware, use [OTA USB bootstrap](direct-upgrade.md).
 This page retains the historical four-image packages; do not mix these procedures.
 
 For Biolingo v22, ESP32-S3-WROOM-1-N16R8, AD8232 and 16 MB flash.

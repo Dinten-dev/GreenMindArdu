@@ -1,13 +1,13 @@
 # Downloads and installation
 
-Direct downloads updated 13 October 2026; other components retain their reviewed 10 October versions. Sensor firmware is installed manually over USB.
+Direct downloads updated 13 October 2026; other components retain their reviewed 10 October versions. Direct OTA needs one-time USB bootstrap; Gateway firmware remains manual USB.
 The Raspberry Pi package is a manual maintenance candidate with hardware acceptance pending.
 Cloud source publication does not deploy a server or activate an archive policy.
 
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
-| Direct-to-Cloud sensor, Production v2.9-rc1 / latest PSRAM candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
+| Direct-to-Cloud sensor, Production v2.10-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |
 | Cloud backend and dashboard, reviewed source snapshot | [Source archive](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/GreenMindDB-source-2026-10-10.tar.gz) | [Cloud setup](https://github.com/Dinten-dev/GreenMindDB/blob/main/README.md#local-development) and [backend guide](https://github.com/Dinten-dev/GreenMindDB/blob/main/backend/README.md) |
@@ -15,7 +15,7 @@ Cloud source publication does not deploy a server or activate an archive policy.
 
 ## Verify before installation
 
-- Latest Direct: use [the application-only upgrade guide](direct-upgrade.md) and [Direct SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/SHA256SUMS).
+- Latest Direct: use [the OTA bootstrap guide](direct-upgrade.md) and [Direct SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/SHA256SUMS).
 - Historical v2.8/Gateway sensors: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/SHA256SUMS) and verify the ZIP, then each binary against its package manifest.
 - Raspberry Pi: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/SHA256SUMS); the maintenance ZIP contains its own manifest and file checksums.
 - Cloud: download [SHA256SUMS](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/SHA256SUMS) and [source manifest](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/manifest.json). Check the exact source revision before deployment planning.
@@ -45,7 +45,10 @@ Older field releases remain historical references. A newer source branch does no
 ## Maintaining the latest Direct download
 
 Direct-only releases keep immutable version assets and the dedicated `direct-latest` alias.
-For a future version, update CloudConfig.h, validate changes, and push the matching
-`direct-v<VERSION>` tag. The release workflow builds/tests the Production N16R8 app,
-publishes version assets and updates the alias, checksums and source tag.
+For each version, test the exact Production OTA binary on a physical sensor first.
+`tools/package_direct_ota_release.py` requires the matching application/bootloader
+hashes, source fingerprints and complete physical report before packaging.
+Publish immutable version assets, then update `direct-latest` with those same bytes.
+The tag workflow validates software candidates; it cannot substitute a rebuilt
+binary or update the public alias without the hardware acceptance step.
 CI builds do not imply per-board hardware or plant-signal qualification.

@@ -9,7 +9,14 @@ inline constexpr char endpoint[] = "https://green-mind.ch/api/v1/direct-ingest/c
 inline constexpr char label[] = "PRODUCTION";
 // Never reuse a Staging device identity/token when changing environments.
 inline constexpr char preferencesNamespace[] = "gmdirectprod";
+#ifdef GREENMIND_DIRECT_OTA
+#ifndef GREENMIND_DIRECT_OTA_VERSION
+#define GREENMIND_DIRECT_OTA_VERSION "direct-hotspot-v2.10-rc1-production"
+#endif
+inline constexpr char firmwareVersion[] = GREENMIND_DIRECT_OTA_VERSION;
+#else
 inline constexpr char firmwareVersion[] = "direct-hotspot-v2.9-rc1-production";
+#endif
 #else
 inline constexpr char host[] = "test.green-mind.ch";
 inline constexpr char base[] = "https://test.green-mind.ch/api/v1/direct-ingest";
