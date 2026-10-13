@@ -26,8 +26,8 @@ def main():
         raise ValueError("Unexpected application size")
     if args.hardware_tested_sha256 and digest != args.hardware_tested_sha256:
         raise ValueError("Application differs from hardware-tested binary")
-    config = (ROOT / "examples/direct_sensor/src/CloudConfig.h").read_text().split("#else")[0]
-    version = re.search(r'firmwareVersion\[\] = "([^"]+)"', config).group(1)
+    config = (ROOT / "examples/direct_sensor/src/CloudConfig.h").read_text()
+    version = re.search(r'firmwareVersion\[\] = "(direct-hotspot-v[^"]+-production)"', config).group(1)
     manifest = {
         "source_commit": args.source_commit, "environment": env, "version": version,
         "board": "Biolingo v22 / ESP32-S3-WROOM-1-N16R8",
@@ -41,7 +41,7 @@ def main():
         "measurement_quality": "not hardware-qualified by this release",
         "firmware": {"file": "firmware.bin", "bytes": len(firmware), "sha256": digest},
     }
-    guide = (ROOT / "docs/direct-upgrade.md").read_bytes()
+    guide = (ROOT / "docs/direct-upgrade-v2.9.md").read_bytes()
     helper = (ROOT / "tools/prepare_direct_upgrade.py").read_bytes()
     args.output.mkdir(parents=True, exist_ok=True)
     target = args.output / "direct-to-cloud-production.zip"

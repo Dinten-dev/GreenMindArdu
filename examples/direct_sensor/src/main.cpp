@@ -1,6 +1,6 @@
 /**
  * Explicit Direct/DUAL firmware for new/provisioned Biolingo ESP32-S3 devices.
- * Existing production firmware is untouched. No OTA or automatic migration.
+ * OTA is explicit on the N16R8 target; USB bootstrap retains pairing.
  * ADC input: Biolingo v22 AD8232 on GPIO4; 380 Hz, mono PCM16 comparison.
  * ADS131M04 drivers can submit interleaved SampleBlock PCM24 independently.
  */
@@ -177,9 +177,12 @@ static bool sendGateway(const SampleBlock& block) {
     return acknowledged;
 }
 
+#include "DirectOta.h"
+
 static void directWorker(void*) {
     uint32_t backoff = 1000;
     for (;;) {
+        directOtaTick();
         if (!directQueue.peek(directPending)) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         while (!sendDirect(directPending)) {
             vTaskDelay(pdMS_TO_TICKS(backoff + esp_random() % 500));
@@ -219,6 +222,15 @@ static void acquisition(void*) {
     analogReadResolution(12);
     analogSetPinAttenuation(4, ADC_11db);
     for (;;) {
+#ifdef GREENMIND_DIRECT_OTA
+        if (otaPauseRequested.load()) {
+            if (acquisitionBlock.frames) { submit(acquisitionBlock); acquisitionBlock.frames = 0; }
+            otaAcquisitionPaused.store(true);
+            while (otaPauseRequested.load()) vTaskDelay(pdMS_TO_TICKS(10));
+            otaAcquisitionPaused.store(false);
+            // Retain the real elapsed time: this deliberate maintenance gap is explicit.
+        }
+#endif
         const uint64_t now = esp_timer_get_time();
         if (!hasClock.load(std::memory_order_relaxed)) {
             // Anchor this session once UTC becomes available. Gateway can run
@@ -308,6 +320,10 @@ static bool prepareDirectSpool() {
 void setup() {
     Serial.begin(115200);
     Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
+#ifdef GREENMIND_DIRECT_OTA
+    otaBootSetup();
+    xTaskCreatePinnedToCore(otaBootGuard, "ota-boot-guard", 4096, nullptr, 1, nullptr, 0);
+#endif
     StatusDisplay::init();
     makeSessionId();
     preferences.begin(greenmind::cloud::preferencesNamespace, true);
@@ -356,6 +372,13 @@ static void updateStatusDisplay() {
         StatusDisplay::show("SETUP", portalName, "192.168.4.1", portalScreenMessage,
             pairPending ? "Bitte warten..." : "Mit Handy verbinden");
     } else if (configured) {
+#ifdef GREENMIND_DIRECT_OTA
+        if (otaBusy.load()) {
+            StatusDisplay::show("FIRMWAREUPDATE", "Aufnahme pausiert", "Puffer wird bestaetigt",
+                "Firmware wird geprueft", "Danach Neustart");
+            return;
+        }
+#endif
         const bool wifiOk = WiFi.status() == WL_CONNECTED;
         // In DUAL mode show both independent paths, six seconds per page.
         const bool cloudPage = mode == Mode::Direct ||

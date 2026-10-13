@@ -1,7 +1,7 @@
 # Direct-to-Cloud: download, USB installation and pairing
 
 For Biolingo v22 / ESP32-S3 with 16 MB flash and AD8232.
-Current Production download: Direct v2.9-rc1 PSRAM candidate. No Raspberry Pi is required.
+Current Production download: Direct v2.10-rc1 PSRAM/OTA candidate. No Raspberry Pi is required.
 
 ## Download and install
 
@@ -9,11 +9,12 @@ Current Production download: Direct v2.9-rc1 PSRAM candidate. No Raspberry Pi is
 · [SHA256SUMS](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/SHA256SUMS)
 · [Current version and validation](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-latest).
 
-Follow [application-only USB upgrade](direct-upgrade.md). Preserve the installed
-partition layout and NVS; v2.9 is not the old four-image v2.8 factory package.
-The manifest identifies `direct_biolingo_v22_psram_production` and the exact version.
-Use the tested N16R8 target, verify actual PSRAM and buffer capacity after installation.
-No OTA or automatic update is enabled. Production and Staging identities remain separate.
+Follow [one-time OTA USB bootstrap](direct-upgrade.md). Back up privately and retain
+NVS pairing; the helper handles the supported installed flash layout.
+The manifest identifies `direct_biolingo_v22_psram_ota_production` and the exact version.
+Use the tested N16R8 target and verify actual PSRAM and buffer capacity afterwards.
+Further cloud OTA is device-scoped and explicitly assigned by the operator.
+Production and Staging identities remain separate.
 
 ## Pair with the cloud
 
@@ -45,7 +46,7 @@ Dashboard/read-service activation is a separate server step; report missing view
 
 ## Limits and changes
 
-v2.9-rc1 stores compact PCM blocks in PSRAM until an identity-, sequence- and
+The Direct PSRAM builds store compact PCM blocks in PSRAM until an identity-, sequence- and
 hash-checked upload acknowledgement. Capture continues during upload retries.
 Sampling remains 380 Hz raw nominal amplifier-output mV. HPK/100-Hz processing is
 an optional server derivative; the firmware does not filter or overwrite raw data.
@@ -56,3 +57,7 @@ continuous capture across segment boundaries. With 4 MiB, nominal capacity is
 Reset/power loss clears the buffer, and finite buffers can overflow.
 Other devices need their own board, PSRAM, upload and recording checks.
 The public package includes the exact hardware-tested Production application.
+
+OTA flash/reboot uses an explicit maintenance pause after all buffered blocks are
+acknowledged. This is a recording gap; see the bootstrap guide's validation and
+rollback contract. GitHub publication alone does not update installed sensors.

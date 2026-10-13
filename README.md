@@ -1,32 +1,32 @@
 # GreenMind sensor firmware
 
-Manual USB firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
+USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
-Current downloads use local hotspot/web setup. Direct v2.9-rc1 PSRAM passed one-device outage/continuity checks; other boards and measurement quality require hardware acceptance.
+Current downloads use local hotspot/web setup. Direct v2.10-rc1 adds authenticated cloud OTA after a one-time USB bootstrap; other boards and measurement quality require hardware acceptance.
 
 ## Download and install
 
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
-| Direct-to-Cloud sensor, Production v2.9-rc1 / latest PSRAM candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
+| Direct-to-Cloud sensor, Production v2.10-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |
 | Cloud backend and dashboard, reviewed source snapshot | [Source archive](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/GreenMindDB-source-2026-10-10.tar.gz) | [Cloud setup](https://github.com/Dinten-dev/GreenMindDB/blob/main/README.md#local-development) and [backend guide](https://github.com/Dinten-dev/GreenMindDB/blob/main/backend/README.md) |
 
 
-Use the [latest Direct download and application-only USB upgrade](docs/direct-upgrade.md).
+Use the [latest Direct download and one-time OTA USB bootstrap](docs/direct-upgrade.md).
 Publishing does not update installed sensors.
 
 Follow the matching [Direct guide](docs/direct-to-cloud.md) or [Gateway sensor guide](docs/gateway-sensor.md).
-See [all downloads and checksums](docs/downloads.md). OTA is disabled in the current sensor downloads.
+See [all downloads and checksums](docs/downloads.md). Direct v2.10 supports device-scoped cloud OTA after USB installation; Gateway OTA remains disabled.
 
 ## Firmware choices
 
 | Choice | Build target | Runtime |
 | --- | --- | --- |
 | Gateway sensor v1.2.0 | `GreenMindFirmware_Biolingo` / `biolingo_v22` | 380 Hz, existing filters, durable LittleFS spool, local Gateway code |
-| Direct Production v2.9-rc1 | `examples/direct_sensor` / `direct_biolingo_v22_psram_production` | 380 Hz raw, volatile PSRAM store-and-forward, Direct cloud code |
+| Direct Production v2.10-rc1 / OTA | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | 380 Hz raw, volatile PSRAM, authenticated cloud OTA |
 | Direct Staging source v2.9-rc1 | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical Staging acceptance pending |
 
 DUAL is an explicitly configured comparison mode, not the normal installation choice.
@@ -61,9 +61,10 @@ pio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_b
 ```
 
 Only run `./flash-sensor.sh` after reading the Gateway installation guide and backing up the target sensor.
-Native transport tests and all four Direct builds run in GitHub Actions.
-Future `direct-v<VERSION>` tags matching CloudConfig.h publish checked Direct ZIPs
-and update the fixed `direct-latest` download; other component releases do not replace it. Gateway formatting uses clang-format 18.1.8.
+Native transport tests and five Direct builds run in GitHub Actions.
+Release tags validate software candidates; publication requires `tools/package_direct_ota_release.py`
+with the exact physically tested binary and hardware report. Only that verified package
+updates `direct-latest`. A CI rebuild cannot silently replace it. Gateway formatting uses clang-format 18.1.8.
 
 ## Documentation and project
 

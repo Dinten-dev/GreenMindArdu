@@ -1,15 +1,25 @@
 Download the [latest Production Direct ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)
-and follow the [application-only USB guide](../../docs/direct-upgrade.md).
+and follow the [OTA bootstrap guide](../../docs/direct-upgrade.md).
 
 # Direct firmware and explicit DUAL development
 
-## v2.9-rc1 PSRAM store-and-forward candidate
+## v2.10-rc1 Production OTA
+
+`direct_biolingo_v22_psram_ota_production` adds same-origin HTTPS device authentication,
+per-device/source-version assignments, bounded SHA-256 downloads, independent flash
+read-back, queue drain/maintenance pause, and pending-trial boot validation after ten
+verified uploads. Bootstrap includes the rollback-capable bootloader and two-slot
+layout; NVS pairing is retained. OTA operates only in DIRECT mode on physical N16R8.
+See the [USB bootstrap and update contract](../../docs/direct-upgrade.md).
+The `ota_trial` and `ota_reject_boot` targets are local test images, never downloads.
+
+## Retained v2.9-rc1 PSRAM builds
 
 The explicit `direct_biolingo_v22_psram_test` and
 `direct_biolingo_v22_psram_production` targets select the existing Biolingo v22
 N16R8 board definition (16 MB flash, octal PSRAM). Verify the actual module
 marking and detected PSRAM before flashing. The Production application passed one-device hardware acceptance; it remains
-a release candidate and is not qualified for every board or plant measurement. No automatic flashing or OTA is provided.
+a release candidate and is not qualified for every board or plant measurement. These retained non-OTA build targets do not provide cloud updates.
 
 Acquisition stores compact PCM records in a bounded SPSC byte ring. Each record
 remains in the ring while uploading and retrying; it is released only after the
@@ -51,9 +61,9 @@ This folder is a separate PlatformIO project for new, explicitly provisioned
 Biolingo v22 ESP32-S3 sensors. The Gateway sensor is built separately in `GreenMindFirmware_Biolingo`; neither target updates an installed sensor automatically.
 
 Build with `platformio run --project-dir examples/direct_sensor`. This creates
-an image only; it does not flash or distribute firmware. The example uses a
-separate large-app partition layout and has no OTA integration. Do not install
-it through the old OTA path or flash an existing production device implicitly.
+an image only; it does not flash or distribute firmware. The generic/non-OTA targets retain their large-app layout. The explicit Production
+OTA target uses two slots; install its reviewed bootstrap once over USB, never
+through the old Gateway OTA path. Do not flash another sensor implicitly.
 
 ## Hotspot setup (selected environment)
 
@@ -191,4 +201,4 @@ the OLED; acquisition and both upload tasks remain independent.
 
 ## Manual v2.8 OLED update
 
-The OLED shows sensor MAC suffix and mean/minimum/maximum of the most recent completed 380-sample second, in mV. It observes the existing ADC values; calibration, sampling, filtering, pairing, data payload, retry/spool, endpoint and ACK validation remain unchanged. Stale readings display `--`. No OTA distribution is provided.
+The OLED shows sensor MAC suffix and mean/minimum/maximum of the most recent completed 380-sample second, in mV. It observes the existing ADC values; calibration, sampling, filtering, pairing, data payload, retry/spool, endpoint and ACK validation remain unchanged. Stale readings display `--`. Cloud OTA is provided only by the explicit v2.10 Production OTA target.
