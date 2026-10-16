@@ -1,6 +1,6 @@
 """Verify the private backup and OTA package; print safe USB commands.
 
-No serial access and no device writes. Single-slot layouts need explicit
+Read-only physical flash probe; no device writes. Single-slot layouts need explicit
 --install-ota-layout; NVS contents, address AND size are retained.
 """
 import argparse
@@ -127,6 +127,7 @@ def verify_package(directory):
 
 
 def main():
+    from flash_hardware import probe_flash, require_capacity
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backup", type=Path, required=True)
     parser.add_argument("--port", required=True)
@@ -134,6 +135,8 @@ def main():
     args = parser.parse_args()
     directory = Path(__file__).resolve().parent
     manifest = verify_package(directory)
+    detected = probe_flash(args.port)
+    require_capacity(detected, manifest["flash_bytes"], args.backup.stat().st_size)
     files = usb_plan(args.backup.read_bytes(), manifest, directory, args.install_ota_layout)
     print("Verified OTA bootstrap:", manifest["version"])
     print("N16R8 / 16 MiB / 8 MiB PSRAM must be physically verified first.")

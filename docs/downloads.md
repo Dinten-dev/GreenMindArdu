@@ -1,5 +1,9 @@
 # Downloads and installation
 
+The [v2.11 avg20ms candidate](direct-avg20ms.md) adds hardware-clocked 20 ms
+averaging, an 8 MiB new-sensor bootstrap and a physical flash-size guard.
+It does not replace `direct-latest` until its own OTA acceptance is complete.
+
 Direct downloads updated 13 October 2026; other components retain their reviewed 10 October versions. Direct OTA needs one-time USB bootstrap; Gateway firmware remains manual USB.
 The Raspberry Pi package is a manual maintenance candidate with hardware acceptance pending.
 Cloud source publication does not deploy a server or activate an archive policy.

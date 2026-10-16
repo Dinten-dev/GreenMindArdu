@@ -17,6 +17,8 @@ jobs:
           python -m unittest discover -s tests -v
           g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_ota_contract.cpp -o /tmp/ota-contract
           /tmp/ota-contract
+          g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_mains_average.cpp -o /tmp/mains-test
+          /tmp/mains-test
       - name: Build software candidate
         run: |
           python -m pip install platformio==6.1.19

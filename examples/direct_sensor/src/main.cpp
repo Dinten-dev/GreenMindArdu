@@ -1,10 +1,12 @@
 /**
  * Explicit Direct/DUAL firmware for new/provisioned Biolingo ESP32-S3 devices.
  * OTA is explicit on the N16R8 target; USB bootstrap retains pairing.
- * ADC input: Biolingo v22 AD8232 on GPIO4; 380 Hz, mono PCM16 comparison.
+ * ADC input: GPIO4 at hardware-clocked 2 kHz; 20 ms moving mean, 380 Hz PCM16.
  * ADS131M04 drivers can submit interleaved SampleBlock PCM24 independently.
  */
 #include <Arduino.h>
+#include <driver/adc.h>
+#include "../../../transport_validation/MainsAverage20ms.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -38,7 +40,9 @@ static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{
 static bool configured = false;
 static greenmind::UploadStatus directStatus, gatewayStatus;
 static String provisionLine;
-// Display-only snapshot of the same unfiltered sample sent to the cloud.
+// Display-only snapshot of the same mains-averaged sample sent to the cloud.
+static std::atomic<uint32_t> rawConversions{0}, rawClipped{0}, adcRestarts{0}, filteredFrames{0};
+static std::atomic<bool> adcHealthy{false}, adcFault{false};
 #include "../../../transport_validation/SignalDisplayStats.h"
 
 static void makeSessionId() {
@@ -65,6 +69,9 @@ static String sha256(const uint8_t* data, size_t length) {
 // ADC implementations call this from their sole acquisition task. Submission
 // never waits for Wi-Fi or for either consumer, including in DUAL mode.
 static void submit(SampleBlock& block) {
+#ifdef GREENMIND_DIRECT_ADC_SELFTEST
+    return; // Offline hardware test only: no uploads, pairing or NVS access.
+#endif
     if (!block.valid()) { timingDropped.fetch_add(block.frames); return; }
     if (mode == Mode::Dual && (block.channels != 1 || block.sampleBits != 16 || block.sampleRate != 380)) {
         timingDropped.fetch_add(block.frames); return;
@@ -209,49 +216,108 @@ static void gatewayWorker(void*) {
     }
 }
 
+static bool startContinuousAdc() {
+    adc_digi_init_config_t buffers{};
+    buffers.max_store_buf_size = 16 * 1024;
+    buffers.conv_num_each_intr = 64;
+    buffers.adc1_chan_mask = 1U << ADC1_CHANNEL_3; // ESP32-S3 GPIO4
+    if (adc_digi_initialize(&buffers) != ESP_OK) return false;
+    adc_digi_pattern_config_t pattern{};
+    pattern.atten = ADC_ATTEN_DB_11;
+    pattern.channel = ADC1_CHANNEL_3;
+    pattern.unit = 0; // DMA pattern units are zero-based (ADC1).
+    pattern.bit_width = 12;
+    adc_digi_configuration_t config{};
+    config.pattern_num = 1;
+    config.adc_pattern = &pattern;
+    config.sample_freq_hz = greenmind::MainsAverage20ms::rawHz;
+    config.conv_mode = ADC_CONV_SINGLE_UNIT_1;
+    config.format = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
+    if (adc_digi_controller_configure(&config) == ESP_OK && adc_digi_start() == ESP_OK)
+        return true;
+    adc_digi_deinitialize();
+    return false;
+}
+
+static void stopContinuousAdc() {
+    adcHealthy.store(false);
+    adc_digi_stop();
+    adc_digi_deinitialize();
+}
+
 static void acquisition(void*) {
-    // A Direct-only session starts once its timestamps and network are ready.
-    // Boot-time Wi-Fi/NTP waits must not fill the finite measurement queue.
-    // Gateway and DUAL retain their independent, immediate acquisition path.
     if (mode == Mode::Direct) {
         while (WiFi.status() != WL_CONNECTED || time(nullptr) < 1700000000)
             vTaskDelay(pdMS_TO_TICKS(50));
     }
-    uint64_t origin = esp_timer_get_time();
-    uint64_t frame = 0;
-    analogReadResolution(12);
-    analogSetPinAttenuation(4, ADC_11db);
+    // DMA preserves real 500 us conversions across task yields and Wi-Fi work.
+    // Timestamp the filtered output at its right edge: nominal delay 9.75 ms.
+    constexpr uint64_t warmupUs = (greenmind::MainsAverage20ms::samples - 1) * 500ULL;
+    uint64_t captureOrigin = esp_timer_get_time();
+    const uint64_t origin = captureOrigin + warmupUs;
+    uint64_t rawIndex = 0, frame = 0;
+    greenmind::MainsAverage20ms average;
+    alignas(4) uint8_t dma[256];
+    bool running = false;
     for (;;) {
 #ifdef GREENMIND_DIRECT_OTA
         if (otaPauseRequested.load()) {
             if (acquisitionBlock.frames) { submit(acquisitionBlock); acquisitionBlock.frames = 0; }
+            if (running) { stopContinuousAdc(); running = false; }
             otaAcquisitionPaused.store(true);
             while (otaPauseRequested.load()) vTaskDelay(pdMS_TO_TICKS(10));
             otaAcquisitionPaused.store(false);
-            // Retain the real elapsed time: this deliberate maintenance gap is explicit.
+            // A fresh, full window follows the explicit OTA maintenance gap.
         }
 #endif
-        const uint64_t now = esp_timer_get_time();
+        if (!running) {
+            captureOrigin = esp_timer_get_time();
+            if (!startContinuousAdc()) {
+                adcFault.store(true);
+                Serial.println("adc_start_failed acquisition_paused=1");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+            running = true;
+            adcHealthy.store(true); adcFault.store(false);
+            average.reset(); rawIndex = 0;
+        }
         if (!hasClock.load(std::memory_order_relaxed)) {
-            // Anchor this session once UTC becomes available. Gateway can run
-            // without UTC; Direct retains its pending RAM blocks until then.
-            timeval wall;
-            gettimeofday(&wall, nullptr);
+            timeval wall; gettimeofday(&wall, nullptr);
             if (wall.tv_sec > 1700000000) {
                 sessionStartUs = uint64_t(wall.tv_sec) * 1000000 + wall.tv_usec - (esp_timer_get_time() - origin);
                 hasClock.store(true, std::memory_order_release);
             }
         }
-        const uint64_t target = origin + frame * 1000000ULL / 380;
-        if (now < target) { delayMicroseconds(static_cast<uint32_t>(target - now)); continue; }
-        if (now > target + 1000000ULL / 380) {
+        uint32_t bytes = 0;
+        const esp_err_t result = adc_digi_read_bytes(dma, sizeof(dma), &bytes, 100);
+        if (result != ESP_OK || bytes % sizeof(adc_digi_output_data_t)) {
             if (acquisitionBlock.frames) { submit(acquisitionBlock); acquisitionBlock.frames = 0; }
-            const uint64_t missed = (now - target) * 380 / 1000000;
-            frame += missed;
-            timingDropped.fetch_add(static_cast<uint32_t>(missed));
+            stopContinuousAdc(); running = false;
+            adcFault.store(true);
+            adcRestarts.fetch_add(1);
+            Serial.printf("adc_restart reason=%s real_gap=1\n", esp_err_to_name(result));
+            // Never fill an overflow/timeout with repeated readings. The next
+            // full real window advances the existing frame clock across the gap.
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
         }
-        const uint16_t deciMv = static_cast<uint16_t>(std::lround(analogRead(4) * (33000.0 / 4095.0)));
+        for (uint32_t offset = 0; offset < bytes; offset += sizeof(adc_digi_output_data_t)) {
+            const auto* sample = reinterpret_cast<const adc_digi_output_data_t*>(dma + offset);
+            if (sample->type2.channel != ADC1_CHANNEL_3 || sample->type2.unit != 0) continue;
+            const uint16_t raw = sample->type2.data;
+            const uint64_t sampledAt = captureOrigin + rawIndex++ * 500ULL;
+            rawConversions.fetch_add(1);
+            if (raw == 0 || raw == 4095) rawClipped.fetch_add(1);
+            if (!average.add(raw) || sampledAt < origin + frame * 1000000ULL / 380) continue;
+            const uint64_t due = (sampledAt - origin) * 380 / 1000000ULL;
+            if (due > frame) {
+                if (acquisitionBlock.frames) { submit(acquisitionBlock); acquisitionBlock.frames = 0; }
+                timingDropped.fetch_add(static_cast<uint32_t>(due - frame)); frame = due;
+            }
+        const uint16_t deciMv = static_cast<uint16_t>(std::lround(average.mean() * (33000.0 / 4095.0)));
         SignalDisplayStats::record(deciMv);
+        filteredFrames.fetch_add(1);
         if (!acquisitionBlock.frames) acquisitionBlock.firstFrame = frame;
         const uint16_t index = acquisitionBlock.frames++;
         acquisitionBlock.gatewayDeciMv[index] = deciMv;
@@ -260,8 +326,9 @@ static void acquisition(void*) {
         acquisitionBlock.payload[index * 2 + 1] = static_cast<uint8_t>(uint16_t(pcm) >> 8);
         ++frame;
         if (acquisitionBlock.frames == 380) { submit(acquisitionBlock); acquisitionBlock.frames = 0; }
-        // Yield without network involvement; missed deadlines are explicit above.
-        if (frame % 38 == 0) vTaskDelay(1);
+        }
+        // The hardware continues acquisition during this scheduler yield.
+        vTaskDelay(1);
     }
 }
 
@@ -320,6 +387,12 @@ static bool prepareDirectSpool() {
 void setup() {
     Serial.begin(115200);
     Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
+#ifdef GREENMIND_DIRECT_ADC_SELFTEST
+    mode = Mode::Gateway; // The production DIRECT network/time wait is untouched.
+    StatusDisplay::init();
+    xTaskCreatePinnedToCore(acquisition, "adc-selftest", 4096, nullptr, 2, nullptr, 1);
+    return;
+#endif
 #ifdef GREENMIND_DIRECT_OTA
     otaBootSetup();
     xTaskCreatePinnedToCore(otaBootGuard, "ota-boot-guard", 4096, nullptr, 1, nullptr, 0);
@@ -379,6 +452,10 @@ static void updateStatusDisplay() {
             return;
         }
 #endif
+        if (adcFault.load()) {
+            StatusDisplay::show("ADC PAUSIERT", "Keine neuen Messwerte", "USB-Diagnose pruefen", "WLAN bleibt aktiv", "Keine Ersatzwerte");
+            return;
+        }
         const bool wifiOk = WiFi.status() == WL_CONNECTED;
         // In DUAL mode show both independent paths, six seconds per page.
         const bool cloudPage = mode == Mode::Direct ||
@@ -400,7 +477,20 @@ static void updateStatusDisplay() {
     }
 }
 
+static void printAdcStats() {
+    const auto voltage = SignalDisplayStats::read();
+    Serial.printf("adc_filter=avg20ms raw_hz=2000 output_hz=380 raw_samples=%u raw_clipped=%u output_frames=%u restarts=%u healthy=%d mean_decimv=%u min_decimv=%u max_decimv=%u\n",
+        rawConversions.exchange(0), rawClipped.exchange(0), filteredFrames.exchange(0),
+        adcRestarts.load(), adcHealthy.load(), voltage.meanDeciMv, voltage.minDeciMv, voltage.maxDeciMv);
+}
+
 void loop() {
+#ifdef GREENMIND_DIRECT_ADC_SELFTEST
+    static uint32_t lastTest = 0;
+    if (millis() - lastTest >= 10000) { lastTest = millis(); printAdcStats(); }
+    delay(10);
+    return;
+#endif
     handlePortal();
     updateStatusDisplay();
     // Hold BOOT for five seconds to change WLAN via the local portal.
@@ -430,6 +520,7 @@ void loop() {
         Serial.printf("sensor_alive uptime_ms=%lu display=%s hotspot=%d clients=%u wifi=%d\n",
             millis(), StatusDisplay::ready() ? "ready" : "unavailable", portalActive,
             portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
+        printAdcStats();
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
         Serial.printf("direct_spool_used=%u capacity=%u nominal_capacity_s=%u psram=%d\n",
