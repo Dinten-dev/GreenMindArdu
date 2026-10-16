@@ -48,8 +48,10 @@ Dashboard/read-service activation is a separate server step; report missing view
 
 The Direct PSRAM builds store compact PCM blocks in PSRAM until an identity-, sequence- and
 hash-checked upload acknowledgement. Capture continues during upload retries.
-Sampling remains 380 Hz raw nominal amplifier-output mV. HPK/100-Hz processing is
-an optional server derivative; the firmware does not filter or overwrite raw data.
+The published v2.10 image captures 380 Hz nominal amplifier-output mV. The next
+[v2.11 avg20ms candidate](direct-avg20ms.md) averages genuine 2 kHz ADC conversions
+over 20 ms before producing 380 Hz PCM16. It changes signal bandwidth; historical
+files remain untouched. HPK/100-Hz processing remains separate.
 
 One N16R8 sensor passed a 120.384-second upload outage and 1,844 seconds of
 continuous capture across segment boundaries. With 4 MiB, nominal capacity is

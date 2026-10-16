@@ -33,6 +33,12 @@ class DirectUpgradeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             upgrade.application_partition(data, 1000000, 0x10000)
 
+    def test_16_mib_layout_is_refused_on_an_8_mib_device(self):
+        data = table([(0, 0x10, 0x20000, 0x300000, b"app0", 0),
+                      (1, 0x82, 0x620000, 0x9d0000, b"spiffs", 0)])
+        with self.assertRaises(ValueError):
+            upgrade.application_partition(data, 1000000, flash_bytes=0x800000)
+
     def test_corruption_truncation_oversize_overlap_and_encryption_fail_closed(self):
         valid = table([(0, 0x10, 0x10000, 0x300000, b"app0", 0)])
         bad = bytearray(valid); bad[20] ^= 1

@@ -2,6 +2,8 @@
 
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
+The next candidate is [Direct v2.11-rc1 avg20ms](docs/direct-avg20ms.md), including an 8 MiB flash guard. `direct-latest` remains the separately accepted v2.10 image until the new physical OTA gate passes.
+
 Current downloads use local hotspot/web setup. Direct v2.10-rc1 adds authenticated cloud OTA after a one-time USB bootstrap; other boards and measurement quality require hardware acceptance.
 
 ## Download and install

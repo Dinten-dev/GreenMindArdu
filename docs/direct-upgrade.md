@@ -1,5 +1,9 @@
 # Direct-to-Cloud v2.10-rc1: USB bootstrap, then cloud OTA
 
+This guide describes the accepted v2.10 OTA package. The next
+[v2.11 avg20ms candidate](direct-avg20ms.md) requires its own physical OTA
+acceptance before replacing this download. Never use this 16 MiB layout on 8 MiB.
+
 For **Biolingo v22 / ESP32-S3-WROOM-1-N16R8**, 16 MiB flash,
 8 MiB octal PSRAM, **Production / DIRECT mode** only.
 

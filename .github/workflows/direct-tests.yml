@@ -13,6 +13,10 @@ jobs:
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread tests/direct_transport/test_core.cpp -o /tmp/direct-core-test
           /tmp/direct-core-test
+      - name: Test real 20 ms mains filter
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_mains_average.cpp -o /tmp/mains-test
+          /tmp/mains-test
       - name: Test truthful upload display states
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_upload_status.cpp -o /tmp/upload-status-test

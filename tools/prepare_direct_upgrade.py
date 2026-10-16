@@ -1,6 +1,6 @@
 """Verify a local backup and package; print application-only USB commands.
 
-Never opens a serial device, writes flash, or uploads the private backup.
+Probes the physical flash read-only; never writes or uploads the private backup.
 Partition format follows Espressif gen_esp32part.py (Arduino framework).
 """
 
@@ -12,7 +12,7 @@ import struct
 from pathlib import Path
 
 
-def application_partition(table, image_size, active_offset=None):
+def application_partition(table, image_size, active_offset=None, flash_bytes=0x1000000):
     if len(table) != 4096:
         raise ValueError("Partition table must be a complete 4096-byte sector")
     entries, checked = [], False
@@ -27,7 +27,7 @@ def application_partition(table, image_size, active_offset=None):
         if item[:2] != b"\xaa\x50":
             raise ValueError("Invalid or unchecksummed partition table")
         _, kind, subtype, offset, size, name, flags = struct.unpack("<2sBBLL16sL", item)
-        if flags or offset < 0x9000 or not size or offset + size > 0x1000000:
+        if flags or offset < 0x9000 or not size or offset + size > flash_bytes:
             raise ValueError("Unsupported encrypted, flagged or out-of-range partition")
         entries.append((kind, subtype, offset, size, name))
     if not checked:
@@ -52,10 +52,14 @@ def application_partition(table, image_size, active_offset=None):
 
 def verify_package(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
-    if (manifest["environment"] != "direct_biolingo_v22_psram_production"
+    targets = {"direct_biolingo_production": 0x800000,
+               "direct_biolingo_v22_psram_production": 0x1000000}
+    if (manifest["environment"] not in targets
             or manifest["distribution"] != "manual-usb-application-only"
             or manifest["sample_rate"] != 380 or manifest["endpoint"] != "https://green-mind.ch"):
         raise ValueError("Wrong firmware variant")
+    if manifest["flash_bytes"] != targets[manifest["environment"]]:
+        raise ValueError("Flash capacity differs from the selected firmware target")
     item = manifest["firmware"]
     if item["file"] != "firmware.bin":
         raise ValueError("Unexpected firmware filename")
@@ -67,18 +71,19 @@ def verify_package(directory):
 
 
 def main():
+    from flash_hardware import probe_flash, require_capacity
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backup", required=True, type=Path)
     parser.add_argument("--port", required=True)
     parser.add_argument("--app-offset", type=lambda value: int(value, 0))
     args = parser.parse_args()
     image, size, manifest = verify_package(Path(__file__).resolve().parent)
-    if args.backup.stat().st_size != 0x1000000:
-        raise ValueError("A complete private 16-MiB flash backup is required")
+    detected = probe_flash(args.port)
+    require_capacity(detected, manifest["flash_bytes"], args.backup.stat().st_size)
     with args.backup.open("rb") as backup:
         backup.seek(0x8000)
         table = backup.read(4096)
-    offset = application_partition(table, size, args.app_offset)
+    offset = application_partition(table, size, args.app_offset, detected)
     print("Verified package:", manifest["version"])
     print("Application only; pairing, bootloader, partition table and boot selection stay intact.")
     print("No device write has occurred. Confirm this backup belongs to the connected sensor.")

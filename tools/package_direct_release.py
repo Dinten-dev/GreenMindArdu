@@ -1,4 +1,4 @@
-"""Package only the Production N16R8 Direct application; no NVS or flash dump."""
+"""Package a Production Direct application; no NVS or flash dump."""
 
 import argparse
 import hashlib
@@ -15,10 +15,13 @@ def main():
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--hardware-tested-sha256")
+    parser.add_argument("--environment", choices=("direct_biolingo_production",
+        "direct_biolingo_v22_psram_production"), default="direct_biolingo_v22_psram_production")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_commit):
         raise ValueError("Exact source commit required")
-    env = "direct_biolingo_v22_psram_production"
+    env = args.environment
+    psram = env == "direct_biolingo_v22_psram_production"
     build = ROOT / "examples/direct_sensor/.pio/build" / env
     firmware = (build / "firmware.bin").read_bytes()
     digest = hashlib.sha256(firmware).hexdigest()
@@ -30,28 +33,29 @@ def main():
     version = re.search(r'firmwareVersion\[\] = "(direct-hotspot-v[^"]+-production)"', config).group(1)
     manifest = {
         "source_commit": args.source_commit, "environment": env, "version": version,
-        "board": "Biolingo v22 / ESP32-S3-WROOM-1-N16R8",
-        "flash_bytes": 0x1000000, "psram_required": True,
+        "board": "Biolingo v22 / ESP32-S3-WROOM-1-N16R8" if psram else "ESP32-S3 / minimum 8 MiB flash",
+        "flash_bytes": 0x1000000 if psram else 0x800000, "psram_required": psram,
         "distribution": "manual-usb-application-only", "endpoint": "https://green-mind.ch",
         "sample_rate": 380, "sample_bits": 16, "channels": 1,
-        "calibration_version": "unsigned-mv-linear-int16-v1", "sampling_filter": "raw",
-        "spool": "volatile PSRAM, up to 4 MiB; actual allocation must be checked",
-        "hardware_validation": "one N16R8: 120.384s outage and 1844s continuity passed"
+        "calibration_version": "unsigned-mv-linear-int16-v1", "sampling_filter": "avg20ms", "adc_sample_rate": 2000, "filter_samples": 40, "filter_group_delay_us": 9750, "adc_clipping_recoverable": False,
+        "spool": "volatile PSRAM, up to 4 MiB; actual allocation must be checked" if psram else "limited volatile RAM; no PSRAM outage guarantee",
+        "hardware_validation": "binary digest matched operator input; consult separate scoped hardware report"
             if args.hardware_tested_sha256 else "software build; per-device hardware acceptance required",
         "measurement_quality": "not hardware-qualified by this release",
         "firmware": {"file": "firmware.bin", "bytes": len(firmware), "sha256": digest},
     }
-    guide = (ROOT / "docs/direct-upgrade-v2.9.md").read_bytes()
+    guide = (ROOT / "docs/direct-avg20ms.md").read_bytes()
     helper = (ROOT / "tools/prepare_direct_upgrade.py").read_bytes()
     args.output.mkdir(parents=True, exist_ok=True)
-    target = args.output / "direct-to-cloud-production.zip"
+    target = args.output / ("direct-to-cloud-production.zip" if psram else "direct-to-cloud-production-8mb.zip")
     with ZipFile(target, "w", ZIP_DEFLATED) as package:
         package.writestr("firmware.bin", firmware)
         package.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
         package.writestr("README.md", guide)
         package.writestr("prepare_direct_upgrade.py", helper)
+        package.writestr("flash_hardware.py", (ROOT / "tools/flash_hardware.py").read_bytes())
     with ZipFile(target) as package:
-        if set(package.namelist()) != {"firmware.bin", "manifest.json", "README.md", "prepare_direct_upgrade.py"}:
+        if set(package.namelist()) != {"firmware.bin", "manifest.json", "README.md", "prepare_direct_upgrade.py", "flash_hardware.py"}:
             raise ValueError("Unexpected release contents")
         if hashlib.sha256(package.read("firmware.bin")).hexdigest() != digest or package.testzip():
             raise ValueError("Release verification failed")

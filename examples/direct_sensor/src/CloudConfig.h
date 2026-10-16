@@ -11,11 +11,11 @@ inline constexpr char label[] = "PRODUCTION";
 inline constexpr char preferencesNamespace[] = "gmdirectprod";
 #ifdef GREENMIND_DIRECT_OTA
 #ifndef GREENMIND_DIRECT_OTA_VERSION
-#define GREENMIND_DIRECT_OTA_VERSION "direct-hotspot-v2.10-rc1-production"
+#define GREENMIND_DIRECT_OTA_VERSION "direct-hotspot-v2.11-rc1-avg20ms-production"
 #endif
 inline constexpr char firmwareVersion[] = GREENMIND_DIRECT_OTA_VERSION;
 #else
-inline constexpr char firmwareVersion[] = "direct-hotspot-v2.9-rc1-production";
+inline constexpr char firmwareVersion[] = "direct-hotspot-v2.11-rc1-avg20ms-production";
 #endif
 #else
 inline constexpr char host[] = "test.green-mind.ch";
@@ -24,7 +24,7 @@ inline constexpr char endpoint[] = "https://test.green-mind.ch/api/v1/direct-ing
 inline constexpr char label[] = "TESTUMGEBUNG";
 // Preserve already paired Staging devices and their existing credentials.
 inline constexpr char preferencesNamespace[] = "gmdirect";
-inline constexpr char firmwareVersion[] = "direct-hotspot-v2.9-rc1-staging";
+inline constexpr char firmwareVersion[] = "direct-hotspot-v2.11-rc1-avg20ms-staging";
 #endif
 inline bool acceptsEndpoint(std::string_view candidate) {
     return candidate == endpoint;

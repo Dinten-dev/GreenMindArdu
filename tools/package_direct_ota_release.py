@@ -43,7 +43,7 @@ def main():
         "board": "Biolingo v22 ESP32-S3-WROOM-1-N16R8", "flash_bytes": 0x1000000,
         "psram_required": True, "ota_profile": "biolingo-v22-n16r8-direct-ota-v1",
         "endpoint": "https://green-mind.ch", "sample_rate": 380, "sample_bits": 16, "channels": 1,
-        "calibration_version": "unsigned-mv-linear-int16-v1", "sampling_filter": "raw",
+        "calibration_version": "unsigned-mv-linear-int16-v1", "sampling_filter": "avg20ms", "adc_sample_rate": 2000, "filter_samples": 40, "filter_group_delay_us": 9750, "adc_clipping_recoverable": False,
         "distribution": "one-time-usb-bootstrap-then-device-scoped-cloud-ota",
         "spool": "volatile PSRAM, up to 4 MiB; no reset/power-loss persistence",
         "update_gap": "deliberate maintenance pause/reboot, after acknowledged buffer drain",
@@ -52,6 +52,7 @@ def main():
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     files["hardware-test.json"] = (json.dumps(proof, indent=2) + "\n").encode()
     files["README.md"] = (ROOT / "docs/direct-upgrade.md").read_bytes()
+    files["flash_hardware.py"] = (ROOT / "tools/flash_hardware.py").read_bytes()
     files["prepare_direct_ota_upgrade.py"] = (ROOT / "tools/prepare_direct_ota_upgrade.py").read_bytes()
     args.output.mkdir(parents=True, exist_ok=True)
     target = args.output / "direct-to-cloud-production.zip"
