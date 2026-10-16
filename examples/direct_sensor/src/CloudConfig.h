@@ -29,5 +29,7 @@ inline constexpr char firmwareVersion[] = "direct-hotspot-v2.11-rc1-avg20ms-stag
 inline bool acceptsEndpoint(std::string_view candidate) {
     return candidate == endpoint;
 }
+// The native Direct ingest protocol accepts at most 50 firmware characters.
+static_assert(sizeof(firmwareVersion) <= 51, "Direct firmware version exceeds cloud protocol limit");
 static_assert(sizeof(preferencesNamespace) <= 16, "ESP32 NVS namespace limit");
 }
