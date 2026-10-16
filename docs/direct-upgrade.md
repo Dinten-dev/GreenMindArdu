@@ -1,8 +1,4 @@
-# Direct-to-Cloud v2.10-rc1: USB bootstrap, then cloud OTA
-
-This guide describes the accepted v2.10 OTA package. The next
-[v2.11 avg20ms candidate](direct-avg20ms.md) requires its own physical OTA
-acceptance before replacing this download. Never use this 16 MiB layout on 8 MiB.
+# Direct-to-Cloud v2.11-rc1 avg20ms: USB bootstrap, then cloud OTA
 
 For **Biolingo v22 / ESP32-S3-WROOM-1-N16R8**, 16 MiB flash,
 8 MiB octal PSRAM, **Production / DIRECT mode** only.
@@ -16,10 +12,12 @@ Direct firmware cannot acquire OTA remotely. Afterwards the sensor polls the
 existing cloud every minute and installs only a specifically assigned release.
 Publishing on GitHub alone does not assign an update to every device.
 
-The firmware keeps **380 Hz raw mono PCM16**, the existing calibration identifier,
-and the volatile PSRAM buffer. HPK's filtered 100 Hz output is separate processing.
-Pairing and Wi-Fi credentials remain in NVS. This release does not change signal
-filtering or establish electrode/hardware noise performance.
+The firmware produces **380 Hz mono PCM16 after a 20 ms moving average** of
+forty hardware-clocked 2 kHz ADC conversions. Calibration identifier, cloud
+format, PSRAM spool and NVS identity remain compatible. This changes bandwidth
+and has a nominal 9.75 ms group delay; it cannot recover analog clipping.
+Read the [filter and 8 MiB hardware guide](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-avg20ms.md). HPK 100 Hz is
+separate processing; plant/electrode quality is not qualified by this release.
 
 ## Download, identify and privately back up
 
@@ -51,7 +49,9 @@ reboots cause a real, identified recording gap. PSRAM does not survive resets.
 python direct-firmware/prepare_direct_ota_upgrade.py --backup "$GM_BACKUP_DIR/flash-before.bin" --port "$GM_SENSOR_PORT"
 ```
 
-The helper verifies every firmware file and the backed-up partition checksum.
+The helper first probes actual physical flash capacity and backup length, refusing
+the 16 MiB target on 8 MiB hardware. It then verifies every firmware file and
+the backed-up partition checksum.
 With existing supported two-slot layouts it selects the currently valid OTA slot
 from CRC-checked boot metadata and preserves the partition table, boot selection
 and NVS. It prints bootloader/application write and verification commands; **it
@@ -95,5 +95,9 @@ time is a maintenance gap, never fabricated measurement samples.
 
 The ZIP's hardware-test.json records the exact tested application/bootloader and
 source fingerprints. Hardware tests qualify one N16R8; other devices still need
-their own installation and operational checks. The older v2.9 release remains
+their own installation and operational checks. The initial overlong lab version
+failed ingest and rolled back; the corrected
+short lab identifiers and compiler guard passed the subsequent acceptance.
+USB/flash/reboot and the deliberate failed-hash test create identified gaps;
+these are not uninterrupted capture claims. The older v2.9 release remains
 available as an immutable manual-only package.
