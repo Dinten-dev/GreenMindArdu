@@ -1,7 +1,7 @@
 # Direct-to-Cloud: download, USB installation and pairing
 
 For Biolingo v22 / ESP32-S3 with 16 MB flash and AD8232.
-Current Production download: Direct v2.10-rc1 PSRAM/OTA candidate. No Raspberry Pi is required.
+Current Production download: Direct v2.11-rc1 avg20ms PSRAM/OTA candidate. No Raspberry Pi is required.
 
 ## Download and install
 
@@ -48,13 +48,14 @@ Dashboard/read-service activation is a separate server step; report missing view
 
 The Direct PSRAM builds store compact PCM blocks in PSRAM until an identity-, sequence- and
 hash-checked upload acknowledgement. Capture continues during upload retries.
-The published v2.10 image captures 380 Hz nominal amplifier-output mV. The next
-[v2.11 avg20ms candidate](direct-avg20ms.md) averages genuine 2 kHz ADC conversions
-over 20 ms before producing 380 Hz PCM16. It changes signal bandwidth; historical
-files remain untouched. HPK/100-Hz processing remains separate.
+The [v2.11 avg20ms firmware](direct-avg20ms.md) averages genuine 2 kHz ADC
+conversions over 20 ms before producing 380 Hz PCM16. This changes signal
+bandwidth; historical files remain untouched. HPK/100-Hz processing is separate.
 
-One N16R8 sensor passed a 120.384-second upload outage and 1,844 seconds of
-continuous capture across segment boundaries. With 4 MiB, nominal capacity is
+Historical v2.9 testing on one N16R8 passed a 120.384-second upload outage and
+1,844 seconds of continuous capture across segment boundaries. That endurance
+test was not repeated for v2.11; its new-image OTA and ADC checks are separately
+documented in the filter guide. With 4 MiB, nominal capacity is
 5,349 seconds; check actual allocation. RAM fallback is not PSRAM acceptance.
 Reset/power loss clears the buffer, and finite buffers can overflow.
 Other devices need their own board, PSRAM, upload and recording checks.

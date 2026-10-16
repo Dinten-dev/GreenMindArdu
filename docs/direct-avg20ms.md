@@ -88,7 +88,7 @@ Set up the new device through its local portal and a matching Direct dashboard
 pairing code; no identity or secret is distributed with these binaries.
 
 N16R8 OTA bootstrap packages retain the separate physical OTA acceptance gate
-and [OTA installation guide](direct-upgrade.md). Until the new image passes all
+and [OTA installation guide](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md). Until the new image passes all
 OTA forward/return, boot confirmation, bad-hash and rollback checks, it remains
 a candidate and must not replace `direct-latest` or be assigned fleet-wide.
 The ADC-only self-test and deliberately rejecting OTA images are never downloads.
@@ -102,6 +102,13 @@ network-free ADC probe: three complete ten-second intervals each produced
 readings. The production image was restored afterwards. This probe is not a
 controlled analog 50 Hz rejection measurement or a cloud/OTA acceptance.
 
-Cloud upload, downloaded WAV timing and complete OTA acceptance require an
-available configured WLAN. Keep those gates open until measured with the exact
-candidate binary. Firmware publication never assigns a device update by itself.
+The attached N16R8 passed verified cloud uploads, OTA forward and return with
+full flash SHA readback, ten-upload boot confirmation, deliberately wrong offer
+hash rejection on the physical device, and a deliberately unconfirmed trial
+with automatic rollback. Test assignments were then removed and the regular
+production image restored. The first overlong trial name failed HTTP 422 and
+rolled back; it remains a rejected attempt, followed by the corrected successful
+sequence. Version length is now checked at compile time against the native
+50-character ingest limit. This is one-board OTA qualification, not a physical
+8 MiB board, controlled analog rejection, outage endurance or plant test.
+Firmware publication alone never assigns an update to another device.

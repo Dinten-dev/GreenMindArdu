@@ -2,34 +2,34 @@
 
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
-The next candidate is [Direct v2.11-rc1 avg20ms](docs/direct-avg20ms.md), including an 8 MiB flash guard. `direct-latest` remains the separately accepted v2.10 image until the new physical OTA gate passes.
-
-Current downloads use local hotspot/web setup. Direct v2.10-rc1 adds authenticated cloud OTA after a one-time USB bootstrap; other boards and measurement quality require hardware acceptance.
+Current downloads use local hotspot/web setup. Direct v2.11-rc1 adds a hardware-clocked 20 ms mains average, physical flash-size checks and a separate 8 MiB bootstrap. N16R8 cloud OTA was checked on one attached sensor; other boards and measurement quality require hardware acceptance.
 
 ## Download and install
 
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
-| Direct-to-Cloud sensor, Production v2.10-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
+| Direct-to-Cloud sensor, Production v2.11-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |
 | Cloud backend and dashboard, reviewed source snapshot | [Source archive](https://github.com/Dinten-dev/GreenMindDB/releases/download/source-2026-10-10/GreenMindDB-source-2026-10-10.tar.gz) | [Cloud setup](https://github.com/Dinten-dev/GreenMindDB/blob/main/README.md#local-development) and [backend guide](https://github.com/Dinten-dev/GreenMindDB/blob/main/backend/README.md) |
 
 
+For new 8 MiB sensors use the [separate bootstrap and hardware guide](docs/direct-avg20ms.md).
+
 Use the [latest Direct download and one-time OTA USB bootstrap](docs/direct-upgrade.md).
 Publishing does not update installed sensors.
 
 Follow the matching [Direct guide](docs/direct-to-cloud.md) or [Gateway sensor guide](docs/gateway-sensor.md).
-See [all downloads and checksums](docs/downloads.md). Direct v2.10 supports device-scoped cloud OTA after USB installation; Gateway OTA remains disabled.
+See [all downloads and checksums](docs/downloads.md). Direct v2.11 supports device-scoped cloud OTA after USB installation; Gateway OTA remains disabled.
 
 ## Firmware choices
 
 | Choice | Build target | Runtime |
 | --- | --- | --- |
 | Gateway sensor v1.2.0 | `GreenMindFirmware_Biolingo` / `biolingo_v22` | 380 Hz, existing filters, durable LittleFS spool, local Gateway code |
-| Direct Production v2.10-rc1 / OTA | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | 380 Hz raw, volatile PSRAM, authenticated cloud OTA |
-| Direct Staging source v2.9-rc1 | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical Staging acceptance pending |
+| Direct Production v2.11-rc1 / OTA | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | 380 Hz PCM16 after 20 ms average, volatile PSRAM, authenticated cloud OTA |
+| Direct Staging source v2.11-rc1 avg20ms | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical Staging acceptance pending |
 
 DUAL is an explicitly configured comparison mode, not the normal installation choice.
 Its Gateway and Direct archives remain separate. The N16R8 Direct build uses up to 4 MiB PSRAM (about 89 minutes nominal at 380 Hz).
