@@ -37,7 +37,8 @@ static bool directPsram = false;
 static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
-static bool configured = false;
+static bool configured = false, identityConfigured = false;
+static std::atomic<uint32_t> wifiGotIpGeneration{0};
 static greenmind::UploadStatus directStatus, gatewayStatus;
 static String provisionLine;
 // Display-only snapshot of the same mains-averaged sample sent to the cloud.
@@ -185,6 +186,14 @@ static bool sendGateway(const SampleBlock& block) {
 }
 
 #include "DirectOta.h"
+
+static bool setupAllowed() {
+#ifdef GREENMIND_DIRECT_OTA
+    return !otaBusy.load();
+#else
+    return true;
+#endif
+}
 
 static void directWorker(void*) {
     uint32_t backoff = 1000;
@@ -414,10 +423,19 @@ void setup() {
     pinMode(0, INPUT_PULLUP);
     const bool directValid = token.length() == 80 && deviceId.length() == 36 &&
         greenmind::cloud::acceptsEndpoint(endpoint.c_str()) && certificate.indexOf("BEGIN CERTIFICATE") >= 0;
-    configured = ssid.length() && pairingCode.isEmpty() &&
+    identityConfigured = pairingCode.isEmpty() &&
         ((mode == Mode::Direct && directValid) || (mode == Mode::Gateway && gateway.startsWith("http://")) ||
          (mode == Mode::Dual && directValid && gateway.startsWith("http://")));
-    if (!configured) { startPortal(); return; }
+    configured = !ssid.isEmpty() && identityConfigured;
+    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t) {
+        if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) wifiGotIpGeneration.fetch_add(1);
+    });
+    WiFi.persistent(false); // Try new WLAN credentials in RAM before saving them.
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    if (!ssid.isEmpty()) WiFi.begin(ssid.c_str(), password.c_str());
+    configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
+    if (!configured) { manageSetupPortal(); return; }
     if ((mode == Mode::Direct || mode == Mode::Dual) && !prepareDirectSpool()) {
         Serial.println("direct_spool_allocation_failed");
         StatusDisplay::show("PUFFERFEHLER", "Keine Aufnahme", "Speicher fehlt",
@@ -426,10 +444,6 @@ void setup() {
         return;
     }
     StatusDisplay::show("START", "WLAN verbinden...", greenmind::cloud::host, "Warte auf Verbindung", "");
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(ssid.c_str(), password.c_str());
-    configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
     if (mode == Mode::Direct || mode == Mode::Dual)
         xTaskCreatePinnedToCore(directWorker, "direct-upload", 12288, nullptr, 1, nullptr, 0);
     if (mode == Mode::Gateway || mode == Mode::Dual)
@@ -491,6 +505,7 @@ void loop() {
     delay(10);
     return;
 #endif
+    manageSetupPortal();
     handlePortal();
     updateStatusDisplay();
     // Hold BOOT for five seconds to change WLAN via the local portal.
@@ -502,10 +517,11 @@ void loop() {
     } else {
         heldSince = 0;
         if (reopenPortal) {
-            preferences.begin(greenmind::cloud::preferencesNamespace, false);
-            preferences.putString("ssid", "");
-            preferences.end();
-            ESP.restart();
+            reopenPortal = false;
+            if (setupAllowed()) {
+                setupWindow.requestManual(millis());
+                startPortal();
+            }
         }
     }
     while (Serial.available()) {
