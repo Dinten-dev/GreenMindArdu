@@ -30,8 +30,19 @@ inline bool pack24(int32_t value, uint8_t* output) {
     return true;
 }
 
+// Frozen at acquisition start and copied into every spool record.
+struct CaptureMetadata {
+    uint64_t sessionStartUs = 0;
+    uint64_t syncEpochUs = 0;
+    uint64_t bootCounter = 0;
+    char sessionId[37] = {};
+    char counterGeneration[37] = {};
+    uint8_t protocolVersion = 1;
+};
+
 struct SampleBlock {
     static constexpr size_t MaxBytes = 6000;
+    CaptureMetadata capture{};
     uint64_t sequence = 0;
     uint64_t firstFrame = 0;
     uint16_t frames = 0;

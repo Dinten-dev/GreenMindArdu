@@ -16,8 +16,12 @@
 #include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <sys/time.h>
+#include <esp_sntp.h>
+#include <nvs.h>
 
 #include "../../../direct_transport/DirectCore.h"
+#include "../../../direct_transport/BootIdentity.h"
+#include "../../../direct_transport/CaptureClock.h"
 #include "../../../direct_transport/PcmSpool.h"
 #include "../../../transport_validation/Acknowledgement.h"
 #include "StatusDisplay.h"
@@ -30,6 +34,64 @@ static Mode mode = Mode::Gateway;
 static String ssid, password, endpoint, token, deviceId, certificate, gateway, pairingCode;
 static char sessionId[37];
 static uint64_t sessionStartUs = 0;
+static greenmind::CaptureMetadata captureMetadata;
+static portMUX_TYPE syncLock = portMUX_INITIALIZER_UNLOCKED;
+static uint64_t syncEpochUs = 0, syncMonotonicUs = 0;
+#ifndef GREENMIND_DIRECT_PROTOCOL_VERSION
+#define GREENMIND_DIRECT_PROTOCOL_VERSION 1
+#endif
+static_assert(GREENMIND_DIRECT_PROTOCOL_VERSION == 1 || GREENMIND_DIRECT_PROTOCOL_VERSION == 2,
+              "Unsupported Direct protocol version");
+
+static void onTimeSync(timeval* time) {
+    if (!time || time->tv_sec < 1700000000) return;
+    const uint64_t monotonic = esp_timer_get_time();
+    const uint64_t epoch = uint64_t(time->tv_sec) * 1000000ULL + time->tv_usec;
+    portENTER_CRITICAL(&syncLock);
+    syncEpochUs = epoch;
+    syncMonotonicUs = monotonic;
+    portEXIT_CRITICAL(&syncLock);
+}
+static bool syncSnapshot(uint64_t& epoch, uint64_t& monotonic) {
+    portENTER_CRITICAL(&syncLock);
+    epoch = syncEpochUs;
+    monotonic = syncMonotonicUs;
+    portEXIT_CRITICAL(&syncLock);
+    return epoch >= 1700000000000000ULL;
+}
+
+// One atomic NVS blob commit prevents counter/generation split on power loss.
+// This namespace is intentionally independent of provisioning and Wi-Fi setup.
+static bool allocateBootIdentity() {
+    nvs_handle_t handle;
+    if (nvs_open("gmdirecttime", NVS_READWRITE, &handle) != ESP_OK) return false;
+    struct NvsStore {
+        nvs_handle_t handle;
+        greenmind::IdentityRead read(greenmind::BootIdentity& value) {
+            size_t length = sizeof(value);
+            const esp_err_t error = nvs_get_blob(handle, "identity", &value, &length);
+            if (error == ESP_ERR_NVS_NOT_FOUND) return greenmind::IdentityRead::Missing;
+            return error == ESP_OK && length == sizeof(value) ?
+                greenmind::IdentityRead::Valid : greenmind::IdentityRead::Error;
+        }
+        bool writeAndCommit(const greenmind::BootIdentity& value) {
+            return nvs_set_blob(handle, "identity", &value, sizeof(value)) == ESP_OK &&
+                   nvs_commit(handle) == ESP_OK;
+        }
+    } store{handle};
+    greenmind::BootIdentity identity{};
+    const bool valid = greenmind::allocateBootIdentity(store,
+        [](uint8_t* bytes, size_t length) { esp_fill_random(bytes, length); }, identity);
+    nvs_close(handle);
+    if (!valid) return false;
+    const uint8_t* b = identity.generation;
+    snprintf(captureMetadata.counterGeneration, sizeof(captureMetadata.counterGeneration),
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9],
+        b[10], b[11], b[12], b[13], b[14], b[15]);
+    captureMetadata.bootCounter = identity.counter;
+    return true;
+}
 static std::atomic<bool> hasClock{false};
 static uint64_t sequence = 0;
 static greenmind::PcmSpool directQueue;
@@ -77,6 +139,7 @@ static void submit(SampleBlock& block) {
     if (mode == Mode::Dual && (block.channels != 1 || block.sampleBits != 16 || block.sampleRate != 380)) {
         timingDropped.fetch_add(block.frames); return;
     }
+    block.capture = captureMetadata;
     block.sequence = sequence++;
     if (mode == Mode::Direct || mode == Mode::Dual) {
         if (!directQueue.push(block)) directDropped.fetch_add(block.frames);
@@ -94,11 +157,20 @@ static bool sendDirect(const SampleBlock& block) {
     if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
     const String digest = sha256(block.payload, block.byteCount());
     JsonDocument metadata;
-    metadata["protocol_version"] = 1;
+    metadata["protocol_version"] = block.capture.protocolVersion;
+    if (block.capture.protocolVersion == 2) {
+        metadata["boot_counter"] = block.capture.bootCounter;
+        metadata["counter_generation"] = block.capture.counterGeneration;
+        JsonObject timing = metadata["timing"].to<JsonObject>();
+        timing["source"] = "ntp";
+        timing["sync_epoch_us"] = block.capture.syncEpochUs;
+        timing["time_reference"] = "nominal_sample_clock";
+        timing["uncertainty_us"] = nullptr;
+    }
     metadata["device_id"] = deviceId;
-    metadata["session_id"] = sessionId;
+    metadata["session_id"] = block.capture.sessionId;
     metadata["sequence"] = block.sequence;
-    metadata["session_start_us"] = sessionStartUs;
+    metadata["session_start_us"] = block.capture.sessionStartUs;
     metadata["first_frame"] = block.firstFrame;
     metadata["frame_count"] = block.frames;
     metadata["sample_rate"] = block.sampleRate;
@@ -111,6 +183,11 @@ static bool sendDirect(const SampleBlock& block) {
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
+    if (header.length() > 2048) {
+        Serial.println("direct_metadata_too_large retained=1");
+        directStatus.record(false, -1, millis(), 0);
+        return false;
+    }
     transport.setCACert(certificate.c_str());
     transport.setHandshakeTimeout(10);
     if (!http.begin(transport, endpoint)) {
@@ -132,7 +209,7 @@ static bool sendDirect(const SampleBlock& block) {
         JsonDocument ack;
         if (!deserializeJson(ack, http.getString())) {
             acknowledged = greenmind::directAcknowledged(ack.as<JsonVariantConst>(),
-                deviceId.c_str(), sessionId, block.sequence, digest.c_str());
+                deviceId.c_str(), block.capture.sessionId, block.sequence, digest.c_str());
         }
     }
     directStatus.record(acknowledged, status, millis(), millis() - started);
@@ -255,15 +332,16 @@ static void stopContinuousAdc() {
 }
 
 static void acquisition(void*) {
-    if (mode == Mode::Direct) {
-        while (WiFi.status() != WL_CONNECTED || time(nullptr) < 1700000000)
+    uint64_t initialSyncEpoch = 0, initialSyncMonotonic = 0;
+    if (mode == Mode::Direct || mode == Mode::Dual) {
+        while (!syncSnapshot(initialSyncEpoch, initialSyncMonotonic))
             vTaskDelay(pdMS_TO_TICKS(50));
     }
     // DMA preserves real 500 us conversions across task yields and Wi-Fi work.
     // Timestamp the filtered output at its right edge: nominal delay 9.75 ms.
     constexpr uint64_t warmupUs = (greenmind::MainsAverage20ms::samples - 1) * 500ULL;
-    uint64_t captureOrigin = esp_timer_get_time();
-    const uint64_t origin = captureOrigin + warmupUs;
+    uint64_t captureOrigin = 0;
+    uint64_t origin = 0;
     uint64_t rawIndex = 0, frame = 0;
     greenmind::MainsAverage20ms average;
     alignas(4) uint8_t dma[256];
@@ -287,14 +365,33 @@ static void acquisition(void*) {
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
+            if (!origin) {
+                origin = captureOrigin + warmupUs;
+                if (mode == Mode::Direct || mode == Mode::Dual) {
+                    // Estimate from the SNTP-confirmed monotonic mapping, never
+                    // from upload time or a later system-clock adjustment.
+                    if (!greenmind::sampleClockStart(initialSyncEpoch, initialSyncMonotonic,
+                                                     origin, sessionStartUs)) {
+                        stopContinuousAdc(); origin = 0; adcFault.store(true);
+                        Serial.println("direct_sample_clock_invalid acquisition_paused=1");
+                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        continue;
+                    }
+                    captureMetadata.sessionStartUs = sessionStartUs;
+                    captureMetadata.syncEpochUs = initialSyncEpoch;
+                    hasClock.store(true, std::memory_order_release);
+                }
+            }
             running = true;
             adcHealthy.store(true); adcFault.store(false);
             average.reset(); rawIndex = 0;
         }
-        if (!hasClock.load(std::memory_order_relaxed)) {
-            timeval wall; gettimeofday(&wall, nullptr);
-            if (wall.tv_sec > 1700000000) {
-                sessionStartUs = uint64_t(wall.tv_sec) * 1000000 + wall.tv_usec - (esp_timer_get_time() - origin);
+        if (mode == Mode::Gateway && !hasClock.load(std::memory_order_relaxed)) {
+            uint64_t epoch, monotonic;
+            if (syncSnapshot(epoch, monotonic)) {
+                sessionStartUs = epoch + origin - monotonic;
+                captureMetadata.sessionStartUs = sessionStartUs;
+                captureMetadata.syncEpochUs = epoch;
                 hasClock.store(true, std::memory_order_release);
             }
         }
@@ -408,6 +505,8 @@ void setup() {
 #endif
     StatusDisplay::init();
     makeSessionId();
+    memcpy(captureMetadata.sessionId, sessionId, sizeof(sessionId));
+    captureMetadata.protocolVersion = GREENMIND_DIRECT_PROTOCOL_VERSION;
     preferences.begin(greenmind::cloud::preferencesNamespace, true);
     mode = greenmind::parseMode(preferences.getString("transport", "GATEWAY").c_str());
     ssid = preferences.getString("ssid");
@@ -434,8 +533,16 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     if (!ssid.isEmpty()) WiFi.begin(ssid.c_str(), password.c_str());
+    sntp_set_time_sync_notification_cb(onTimeSync);
     configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
     if (!configured) { manageSetupPortal(); return; }
+    if ((mode == Mode::Direct || mode == Mode::Dual) && !allocateBootIdentity()) {
+        Serial.println("direct_boot_identity_failed acquisition_paused=1");
+        StatusDisplay::show("SPEICHERFEHLER", "Keine Aufnahme", "Bootzaehler fehlt",
+            "USB-Diagnose pruefen", "Neustart erforderlich");
+        configured = false;
+        return;
+    }
     if ((mode == Mode::Direct || mode == Mode::Dual) && !prepareDirectSpool()) {
         Serial.println("direct_spool_allocation_failed");
         StatusDisplay::show("PUFFERFEHLER", "Keine Aufnahme", "Speicher fehlt",

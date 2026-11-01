@@ -7,6 +7,7 @@ namespace greenmind {
 // once, outside acquisition. A record remains owned until its exact ACK.
 class PcmSpool {
     struct Header {
+        CaptureMetadata capture;
         uint64_t sequence;
         uint64_t firstFrame;
         uint16_t frames;
@@ -15,7 +16,7 @@ class PcmSpool {
         uint8_t sampleBits;
         uint16_t reserved;
     };
-    static_assert(sizeof(Header) == 24, "Stable compact record size");
+
     uint8_t* storage_ = nullptr;
     uint32_t capacity_ = 0;
     std::atomic<uint32_t> head_{0}, tail_{0};
@@ -54,7 +55,7 @@ public:
         const uint32_t head = head_.load(std::memory_order_relaxed);
         const uint32_t used = head - tail_.load(std::memory_order_acquire);
         if (bytes > capacity_ - used) return false;
-        const Header header{block.sequence, block.firstFrame, block.frames,
+        const Header header{block.capture, block.sequence, block.firstFrame, block.frames,
                             block.sampleRate, block.channels, block.sampleBits, 0};
         copyIn(head, &header, sizeof(header));
         copyIn(head + sizeof(header), block.payload, block.byteCount());
@@ -68,6 +69,7 @@ public:
         if (bytes < sizeof(Header)) return false;
         Header header{};
         copyOut(tail, &header, sizeof(header));
+        block.capture = header.capture;
         block.sequence = header.sequence;
         block.firstFrame = header.firstFrame;
         block.frames = header.frames;
