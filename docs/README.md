@@ -7,6 +7,7 @@
 | Install Direct-to-Gateway | [Gateway sensor USB installation and pairing](gateway-sensor.md) |
 | Understand Gateway sampling and hardware | [Gateway technical reference](gateway-reference.md) |
 | Develop Direct or explicit DUAL mode | [Direct implementation](../examples/direct_sensor/README.md) |
+| Review the unreleased WLAN setup change | [Direct 2.12 candidate](DIRECT-WIFI-SETUP-2.12.md) |
 | Inspect historical field candidate | [25 September report](archive/GREENHOUSE-2026-09-25.md) |
 
 Historical reports describe their dated candidate, including superseded setup choices.

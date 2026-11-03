@@ -8,6 +8,12 @@ using namespace greenmind;
 
 static SampleBlock sample(uint64_t second) {
     SampleBlock block;
+    block.capture.sessionStartUs = 1700000000000000ULL + second;
+    block.capture.syncEpochUs = 1700000000000000ULL;
+    block.capture.bootCounter = 42;
+    block.capture.protocolVersion = 2;
+    std::strcpy(block.capture.sessionId, "12345678-1234-4234-8234-123456789abc");
+    std::strcpy(block.capture.counterGeneration, "12345678-1234-4234-9234-123456789abc");
     block.sequence = second;
     block.firstFrame = second * 380;
     block.frames = 380;
@@ -18,6 +24,11 @@ static SampleBlock sample(uint64_t second) {
 
 static void verify(const SampleBlock& block, uint64_t second) {
     assert(block.sequence == second && block.firstFrame == second * 380);
+    assert(block.capture.sessionStartUs == 1700000000000000ULL + second);
+    assert(block.capture.syncEpochUs == 1700000000000000ULL);
+    assert(block.capture.bootCounter == 42 && block.capture.protocolVersion == 2);
+    assert(std::strcmp(block.capture.sessionId, "12345678-1234-4234-8234-123456789abc") == 0);
+    assert(std::strcmp(block.capture.counterGeneration, "12345678-1234-4234-9234-123456789abc") == 0);
     assert(block.frames == 380 && block.sampleRate == 380);
     assert(block.channels == 1 && block.sampleBits == 16);
     for (size_t i = 0; i < block.byteCount(); ++i)
@@ -60,6 +71,18 @@ int main() {
         verify(read, i);
         assert(spool.acknowledge(i));
     }
+    // A dropped sequence remains visible; later metadata never rewrites older records.
+    auto beforeGap = sample(8);
+    auto afterGap = sample(10);
+    assert(spool.push(beforeGap));
+    assert(spool.push(afterGap));
+    beforeGap.capture.sessionStartUs += 120000000ULL;
+    assert(spool.peek(read));
+    verify(read, 8);
+    assert(spool.acknowledge(8));
+    assert(spool.peek(read));
+    verify(read, 10);
+    assert(spool.acknowledge(10));
     // Tiny ring forces wraparound and concurrent producer/consumer ownership.
     std::vector<uint8_t> small(8192);
     PcmSpool concurrent;

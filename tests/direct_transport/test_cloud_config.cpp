@@ -14,7 +14,11 @@ int main() {
     assert(std::string(preferencesNamespace) == "gmdirect");
     assert(!acceptsEndpoint("https://green-mind.ch/api/v1/direct-ingest/chunks"));
 #endif
-    assert(std::string(firmwareVersion).find("avg20ms") != std::string::npos);
+    #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
+    assert(std::string(firmwareVersion).find("v2.14-rc1-raw400-p2-") != std::string::npos);
+#else
+    assert(std::string(firmwareVersion).find("v2.14-rc1-raw400-p1-") != std::string::npos);
+#endif
     assert(acceptsEndpoint(std::string(base) + "/chunks"));
     assert(!acceptsEndpoint(std::string(endpoint) + "?redirect=1"));
     assert(!acceptsEndpoint(std::string("http://") + host + "/api/v1/direct-ingest/chunks"));

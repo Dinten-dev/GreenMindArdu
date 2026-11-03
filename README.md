@@ -1,3 +1,7 @@
+> **Step 8 source candidate:** DIRECT uses nominal unfiltered 400 Hz; GATEWAY/DUAL
+> retain 380 Hz. [Contract and pending hardware acceptance](docs/direct-raw400.md).
+> Existing release downloads are unchanged; this branch is not a rollout.
+
 # GreenMind sensor firmware
 
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
@@ -28,11 +32,11 @@ See [all downloads and checksums](docs/downloads.md). Direct v2.11 supports devi
 | Choice | Build target | Runtime |
 | --- | --- | --- |
 | Gateway sensor v1.2.0 | `GreenMindFirmware_Biolingo` / `biolingo_v22` | 380 Hz, existing filters, durable LittleFS spool, local Gateway code |
-| Direct Production v2.11-rc1 / OTA | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | 380 Hz PCM16 after 20 ms average, volatile PSRAM, authenticated cloud OTA |
-| Direct Staging source v2.11-rc1 avg20ms | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical Staging acceptance pending |
+| Direct source v2.14 raw400 candidate | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | Nominal unfiltered 400 Hz PCM16; physical acceptance pending, no rollout |
+| Direct Staging raw400 candidate | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical acceptance pending |
 
 DUAL is an explicitly configured comparison mode, not the normal installation choice.
-Its Gateway and Direct archives remain separate. The N16R8 Direct build uses up to 4 MiB PSRAM (about 89 minutes nominal at 380 Hz).
+Its Gateway and Direct archives remain separate. The N16R8 Direct build uses up to 4 MiB PSRAM; reported nominal capacity includes the rate and record metadata.
 Check actual reported allocation; a full buffer, reset or power loss can lose samples. The OLED reports sensor ID and last-second mean/min/max in mV.
 These are amplifier output readings, not calibrated differential electrode voltages.
 
@@ -63,7 +67,7 @@ pio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_b
 ```
 
 Only run `./flash-sensor.sh` after reading the Gateway installation guide and backing up the target sensor.
-Native transport tests and five Direct builds run in GitHub Actions.
+Native transport tests and seven Direct builds run in GitHub Actions.
 Release tags validate software candidates; publication requires `tools/package_direct_ota_release.py`
 with the exact physically tested binary and hardware report. Only that verified package
 updates `direct-latest`. A CI rebuild cannot silently replace it. Gateway formatting uses clang-format 18.1.8.

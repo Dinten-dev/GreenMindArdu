@@ -1,12 +1,13 @@
 /**
  * Explicit Direct/DUAL firmware for new/provisioned Biolingo ESP32-S3 devices.
  * OTA is explicit on the N16R8 target; USB bootstrap retains pairing.
- * ADC input: GPIO4 at hardware-clocked 2 kHz; 20 ms moving mean, 380 Hz PCM16.
+ * DIRECT: GPIO4, nominal 400 Hz raw PCM16. GATEWAY/DUAL: avg20ms at 380 Hz.
  * ADS131M04 drivers can submit interleaved SampleBlock PCM24 independently.
  */
 #include <Arduino.h>
 #include <driver/adc.h>
 #include "../../../transport_validation/MainsAverage20ms.h"
+#include "../../../direct_transport/Ad8232Raw400.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -16,8 +17,12 @@
 #include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <sys/time.h>
+#include <esp_sntp.h>
+#include <nvs.h>
 
 #include "../../../direct_transport/DirectCore.h"
+#include "../../../direct_transport/BootIdentity.h"
+#include "../../../direct_transport/CaptureClock.h"
 #include "../../../direct_transport/PcmSpool.h"
 #include "../../../transport_validation/Acknowledgement.h"
 #include "StatusDisplay.h"
@@ -30,6 +35,64 @@ static Mode mode = Mode::Gateway;
 static String ssid, password, endpoint, token, deviceId, certificate, gateway, pairingCode;
 static char sessionId[37];
 static uint64_t sessionStartUs = 0;
+static greenmind::CaptureMetadata captureMetadata;
+static portMUX_TYPE syncLock = portMUX_INITIALIZER_UNLOCKED;
+static uint64_t syncEpochUs = 0, syncMonotonicUs = 0;
+#ifndef GREENMIND_DIRECT_PROTOCOL_VERSION
+#define GREENMIND_DIRECT_PROTOCOL_VERSION 1
+#endif
+static_assert(GREENMIND_DIRECT_PROTOCOL_VERSION == 1 || GREENMIND_DIRECT_PROTOCOL_VERSION == 2,
+              "Unsupported Direct protocol version");
+
+static void onTimeSync(timeval* time) {
+    if (!time || time->tv_sec < 1700000000) return;
+    const uint64_t monotonic = esp_timer_get_time();
+    const uint64_t epoch = uint64_t(time->tv_sec) * 1000000ULL + time->tv_usec;
+    portENTER_CRITICAL(&syncLock);
+    syncEpochUs = epoch;
+    syncMonotonicUs = monotonic;
+    portEXIT_CRITICAL(&syncLock);
+}
+static bool syncSnapshot(uint64_t& epoch, uint64_t& monotonic) {
+    portENTER_CRITICAL(&syncLock);
+    epoch = syncEpochUs;
+    monotonic = syncMonotonicUs;
+    portEXIT_CRITICAL(&syncLock);
+    return epoch >= 1700000000000000ULL;
+}
+
+// One atomic NVS blob commit prevents counter/generation split on power loss.
+// This namespace is intentionally independent of provisioning and Wi-Fi setup.
+static bool allocateBootIdentity() {
+    nvs_handle_t handle;
+    if (nvs_open("gmdirecttime", NVS_READWRITE, &handle) != ESP_OK) return false;
+    struct NvsStore {
+        nvs_handle_t handle;
+        greenmind::IdentityRead read(greenmind::BootIdentity& value) {
+            size_t length = sizeof(value);
+            const esp_err_t error = nvs_get_blob(handle, "identity", &value, &length);
+            if (error == ESP_ERR_NVS_NOT_FOUND) return greenmind::IdentityRead::Missing;
+            return error == ESP_OK && length == sizeof(value) ?
+                greenmind::IdentityRead::Valid : greenmind::IdentityRead::Error;
+        }
+        bool writeAndCommit(const greenmind::BootIdentity& value) {
+            return nvs_set_blob(handle, "identity", &value, sizeof(value)) == ESP_OK &&
+                   nvs_commit(handle) == ESP_OK;
+        }
+    } store{handle};
+    greenmind::BootIdentity identity{};
+    const bool valid = greenmind::allocateBootIdentity(store,
+        [](uint8_t* bytes, size_t length) { esp_fill_random(bytes, length); }, identity);
+    nvs_close(handle);
+    if (!valid) return false;
+    const uint8_t* b = identity.generation;
+    snprintf(captureMetadata.counterGeneration, sizeof(captureMetadata.counterGeneration),
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9],
+        b[10], b[11], b[12], b[13], b[14], b[15]);
+    captureMetadata.bootCounter = identity.counter;
+    return true;
+}
 static std::atomic<bool> hasClock{false};
 static uint64_t sequence = 0;
 static greenmind::PcmSpool directQueue;
@@ -37,7 +100,8 @@ static bool directPsram = false;
 static greenmind::SpscQueue<SampleBlock, 4> gatewayQueue;
 static SampleBlock acquisitionBlock, directPending, gatewayPending;
 static std::atomic<uint32_t> directDropped{0}, gatewayDropped{0}, timingDropped{0};
-static bool configured = false;
+static bool configured = false, identityConfigured = false;
+static std::atomic<uint32_t> wifiGotIpGeneration{0};
 static greenmind::UploadStatus directStatus, gatewayStatus;
 static String provisionLine;
 // Display-only snapshot of the same mains-averaged sample sent to the cloud.
@@ -76,6 +140,7 @@ static void submit(SampleBlock& block) {
     if (mode == Mode::Dual && (block.channels != 1 || block.sampleBits != 16 || block.sampleRate != 380)) {
         timingDropped.fetch_add(block.frames); return;
     }
+    block.capture = captureMetadata;
     block.sequence = sequence++;
     if (mode == Mode::Direct || mode == Mode::Dual) {
         if (!directQueue.push(block)) directDropped.fetch_add(block.frames);
@@ -93,14 +158,25 @@ static bool sendDirect(const SampleBlock& block) {
     if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
     const String digest = sha256(block.payload, block.byteCount());
     JsonDocument metadata;
-    metadata["protocol_version"] = 1;
+    metadata["protocol_version"] = block.capture.protocolVersion;
+    if (block.capture.protocolVersion == 2) {
+        metadata["boot_counter"] = block.capture.bootCounter;
+        metadata["counter_generation"] = block.capture.counterGeneration;
+        JsonObject timing = metadata["timing"].to<JsonObject>();
+        timing["source"] = "ntp";
+        timing["sync_epoch_us"] = block.capture.syncEpochUs;
+        timing["time_reference"] = "nominal_sample_clock";
+        timing["uncertainty_us"] = nullptr;
+    }
     metadata["device_id"] = deviceId;
-    metadata["session_id"] = sessionId;
+    metadata["session_id"] = block.capture.sessionId;
     metadata["sequence"] = block.sequence;
-    metadata["session_start_us"] = sessionStartUs;
+    metadata["session_start_us"] = block.capture.sessionStartUs;
     metadata["first_frame"] = block.firstFrame;
     metadata["frame_count"] = block.frames;
     metadata["sample_rate"] = block.sampleRate;
+    if (block.capture.signalProfile == greenmind::SignalProfile::Ad8232Raw400V1)
+        metadata["signal_profile"] = greenmind::raw400Profile;
     metadata["channels"] = block.channels;
     metadata["sample_bits"] = block.sampleBits;
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
@@ -110,6 +186,11 @@ static bool sendDirect(const SampleBlock& block) {
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
+    if (header.length() > 2048) {
+        Serial.println("direct_metadata_too_large retained=1");
+        directStatus.record(false, -1, millis(), 0);
+        return false;
+    }
     transport.setCACert(certificate.c_str());
     transport.setHandshakeTimeout(10);
     if (!http.begin(transport, endpoint)) {
@@ -131,7 +212,7 @@ static bool sendDirect(const SampleBlock& block) {
         JsonDocument ack;
         if (!deserializeJson(ack, http.getString())) {
             acknowledged = greenmind::directAcknowledged(ack.as<JsonVariantConst>(),
-                deviceId.c_str(), sessionId, block.sequence, digest.c_str());
+                deviceId.c_str(), block.capture.sessionId, block.sequence, digest.c_str());
         }
     }
     directStatus.record(acknowledged, status, millis(), millis() - started);
@@ -185,6 +266,14 @@ static bool sendGateway(const SampleBlock& block) {
 }
 
 #include "DirectOta.h"
+
+static bool setupAllowed() {
+#ifdef GREENMIND_DIRECT_OTA
+    return !otaBusy.load();
+#else
+    return true;
+#endif
+}
 
 static void directWorker(void*) {
     uint32_t backoff = 1000;
@@ -245,16 +334,20 @@ static void stopContinuousAdc() {
     adc_digi_deinitialize();
 }
 
+#include "Raw400Acquisition.h"
+
 static void acquisition(void*) {
-    if (mode == Mode::Direct) {
-        while (WiFi.status() != WL_CONNECTED || time(nullptr) < 1700000000)
+    if (mode == Mode::Direct) { acquireRaw400(); return; }
+    uint64_t initialSyncEpoch = 0, initialSyncMonotonic = 0;
+    if (mode == Mode::Direct || mode == Mode::Dual) {
+        while (!syncSnapshot(initialSyncEpoch, initialSyncMonotonic))
             vTaskDelay(pdMS_TO_TICKS(50));
     }
     // DMA preserves real 500 us conversions across task yields and Wi-Fi work.
     // Timestamp the filtered output at its right edge: nominal delay 9.75 ms.
     constexpr uint64_t warmupUs = (greenmind::MainsAverage20ms::samples - 1) * 500ULL;
-    uint64_t captureOrigin = esp_timer_get_time();
-    const uint64_t origin = captureOrigin + warmupUs;
+    uint64_t captureOrigin = 0;
+    uint64_t origin = 0;
     uint64_t rawIndex = 0, frame = 0;
     greenmind::MainsAverage20ms average;
     alignas(4) uint8_t dma[256];
@@ -278,14 +371,33 @@ static void acquisition(void*) {
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
+            if (!origin) {
+                origin = captureOrigin + warmupUs;
+                if (mode == Mode::Direct || mode == Mode::Dual) {
+                    // Estimate from the SNTP-confirmed monotonic mapping, never
+                    // from upload time or a later system-clock adjustment.
+                    if (!greenmind::sampleClockStart(initialSyncEpoch, initialSyncMonotonic,
+                                                     origin, sessionStartUs)) {
+                        stopContinuousAdc(); origin = 0; adcFault.store(true);
+                        Serial.println("direct_sample_clock_invalid acquisition_paused=1");
+                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        continue;
+                    }
+                    captureMetadata.sessionStartUs = sessionStartUs;
+                    captureMetadata.syncEpochUs = initialSyncEpoch;
+                    hasClock.store(true, std::memory_order_release);
+                }
+            }
             running = true;
             adcHealthy.store(true); adcFault.store(false);
             average.reset(); rawIndex = 0;
         }
-        if (!hasClock.load(std::memory_order_relaxed)) {
-            timeval wall; gettimeofday(&wall, nullptr);
-            if (wall.tv_sec > 1700000000) {
-                sessionStartUs = uint64_t(wall.tv_sec) * 1000000 + wall.tv_usec - (esp_timer_get_time() - origin);
+        if (mode == Mode::Gateway && !hasClock.load(std::memory_order_relaxed)) {
+            uint64_t epoch, monotonic;
+            if (syncSnapshot(epoch, monotonic)) {
+                sessionStartUs = epoch + origin - monotonic;
+                captureMetadata.sessionStartUs = sessionStartUs;
+                captureMetadata.syncEpochUs = epoch;
                 hasClock.store(true, std::memory_order_release);
             }
         }
@@ -380,7 +492,7 @@ static bool prepareDirectSpool() {
         return false;
     }
     Serial.printf("direct_spool kind=%s bytes=%u nominal_capacity_s=%u volatile=1\n",
-        directPsram ? "PSRAM" : "RAM_LIMITED", bytes, directQueue.capacitySeconds380());
+        directPsram ? "PSRAM" : "RAM_LIMITED", bytes, directQueue.capacitySeconds(mode == Mode::Direct ? 400 : 380));
     return true;
 }
 
@@ -388,7 +500,11 @@ void setup() {
     Serial.begin(115200);
     Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
 #ifdef GREENMIND_DIRECT_ADC_SELFTEST
-    mode = Mode::Gateway; // The production DIRECT network/time wait is untouched.
+#ifdef GREENMIND_DIRECT_RAW400_SELFTEST
+    mode = Mode::Direct; // Separate offline raw acquisition probe; no identity/network writes.
+#else
+    mode = Mode::Gateway; // Existing filtered probe remains available.
+#endif
     StatusDisplay::init();
     xTaskCreatePinnedToCore(acquisition, "adc-selftest", 4096, nullptr, 2, nullptr, 1);
     return;
@@ -399,6 +515,8 @@ void setup() {
 #endif
     StatusDisplay::init();
     makeSessionId();
+    memcpy(captureMetadata.sessionId, sessionId, sizeof(sessionId));
+    captureMetadata.protocolVersion = GREENMIND_DIRECT_PROTOCOL_VERSION;
     preferences.begin(greenmind::cloud::preferencesNamespace, true);
     mode = greenmind::parseMode(preferences.getString("transport", "GATEWAY").c_str());
     ssid = preferences.getString("ssid");
@@ -414,10 +532,27 @@ void setup() {
     pinMode(0, INPUT_PULLUP);
     const bool directValid = token.length() == 80 && deviceId.length() == 36 &&
         greenmind::cloud::acceptsEndpoint(endpoint.c_str()) && certificate.indexOf("BEGIN CERTIFICATE") >= 0;
-    configured = ssid.length() && pairingCode.isEmpty() &&
+    identityConfigured = pairingCode.isEmpty() &&
         ((mode == Mode::Direct && directValid) || (mode == Mode::Gateway && gateway.startsWith("http://")) ||
          (mode == Mode::Dual && directValid && gateway.startsWith("http://")));
-    if (!configured) { startPortal(); return; }
+    configured = !ssid.isEmpty() && identityConfigured;
+    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t) {
+        if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) wifiGotIpGeneration.fetch_add(1);
+    });
+    WiFi.persistent(false); // Try new WLAN credentials in RAM before saving them.
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    if (!ssid.isEmpty()) WiFi.begin(ssid.c_str(), password.c_str());
+    sntp_set_time_sync_notification_cb(onTimeSync);
+    configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
+    if (!configured) { manageSetupPortal(); return; }
+    if ((mode == Mode::Direct || mode == Mode::Dual) && !allocateBootIdentity()) {
+        Serial.println("direct_boot_identity_failed acquisition_paused=1");
+        StatusDisplay::show("SPEICHERFEHLER", "Keine Aufnahme", "Bootzaehler fehlt",
+            "USB-Diagnose pruefen", "Neustart erforderlich");
+        configured = false;
+        return;
+    }
     if ((mode == Mode::Direct || mode == Mode::Dual) && !prepareDirectSpool()) {
         Serial.println("direct_spool_allocation_failed");
         StatusDisplay::show("PUFFERFEHLER", "Keine Aufnahme", "Speicher fehlt",
@@ -426,10 +561,6 @@ void setup() {
         return;
     }
     StatusDisplay::show("START", "WLAN verbinden...", greenmind::cloud::host, "Warte auf Verbindung", "");
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(ssid.c_str(), password.c_str());
-    configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
     if (mode == Mode::Direct || mode == Mode::Dual)
         xTaskCreatePinnedToCore(directWorker, "direct-upload", 12288, nullptr, 1, nullptr, 0);
     if (mode == Mode::Gateway || mode == Mode::Dual)
@@ -478,6 +609,7 @@ static void updateStatusDisplay() {
 }
 
 static void printAdcStats() {
+    if (mode == Mode::Direct) { printRaw400Stats(); return; }
     const auto voltage = SignalDisplayStats::read();
     Serial.printf("adc_filter=avg20ms raw_hz=2000 output_hz=380 raw_samples=%u raw_clipped=%u output_frames=%u restarts=%u healthy=%d mean_decimv=%u min_decimv=%u max_decimv=%u\n",
         rawConversions.exchange(0), rawClipped.exchange(0), filteredFrames.exchange(0),
@@ -491,6 +623,7 @@ void loop() {
     delay(10);
     return;
 #endif
+    manageSetupPortal();
     handlePortal();
     updateStatusDisplay();
     // Hold BOOT for five seconds to change WLAN via the local portal.
@@ -502,10 +635,11 @@ void loop() {
     } else {
         heldSince = 0;
         if (reopenPortal) {
-            preferences.begin(greenmind::cloud::preferencesNamespace, false);
-            preferences.putString("ssid", "");
-            preferences.end();
-            ESP.restart();
+            reopenPortal = false;
+            if (setupAllowed()) {
+                setupWindow.requestManual(millis());
+                startPortal();
+            }
         }
     }
     while (Serial.available()) {
@@ -524,7 +658,7 @@ void loop() {
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
         Serial.printf("direct_spool_used=%u capacity=%u nominal_capacity_s=%u psram=%d\n",
-            directQueue.used(), directQueue.capacity(), directQueue.capacitySeconds380(), directPsram);
+            directQueue.used(), directQueue.capacity(), directQueue.capacitySeconds(mode == Mode::Direct ? 400 : 380), directPsram);
         const auto status = directStatus.snapshot();
         Serial.printf("display_upload acks=%u interval_ms=%u age_ms=%u errors=%u http=%d\n",
             status.acknowledgements, status.intervalMs,

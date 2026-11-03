@@ -30,8 +30,22 @@ inline bool pack24(int32_t value, uint8_t* output) {
     return true;
 }
 
+enum class SignalProfile : uint8_t { Unspecified, Ad8232Raw400V1 };
+
+// Frozen at acquisition start and copied into every spool record.
+struct CaptureMetadata {
+    uint64_t sessionStartUs = 0;
+    uint64_t syncEpochUs = 0;
+    uint64_t bootCounter = 0;
+    char sessionId[37] = {};
+    char counterGeneration[37] = {};
+    uint8_t protocolVersion = 1;
+    SignalProfile signalProfile = SignalProfile::Unspecified;
+};
+
 struct SampleBlock {
     static constexpr size_t MaxBytes = 6000;
+    CaptureMetadata capture{};
     uint64_t sequence = 0;
     uint64_t firstFrame = 0;
     uint16_t frames = 0;
@@ -45,6 +59,8 @@ struct SampleBlock {
 
     size_t byteCount() const { return size_t(frames) * channels * (sampleBits / 8); }
     bool valid() const {
+        if (capture.signalProfile == SignalProfile::Ad8232Raw400V1 &&
+            (sampleRate != 400 || channels != 1 || sampleBits != 16)) return false;
         return frames > 0 && sampleRate > 0 && sampleRate <= 2000 && channels > 0 && channels <= 8 &&
                (sampleBits == 16 || sampleBits == 24) && frames <= sampleRate * 10 && byteCount() <= MaxBytes;
     }
