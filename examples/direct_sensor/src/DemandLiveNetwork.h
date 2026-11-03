@@ -14,7 +14,10 @@ static void directLiveTick(bool rawPending) {
         if (!directHttp.begin(directTransport, String(greenmind::cloud::base) + "/devices/" + deviceId + path)) return false;
         directHttp.setReuse(true);
         directHttp.setConnectTimeout(100);
-        directHttp.setTimeout(250);
+        // Arduino HTTPClient rounds the TLS socket timeout to whole seconds.
+        // Below 500 ms that becomes zero and can truncate split responses.
+        // Keep a bounded deadline with a nonzero underlying socket timeout.
+        directHttp.setTimeout(750);
         directHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
         directHttp.addHeader("Authorization", String("Bearer ") + token);
         return true;

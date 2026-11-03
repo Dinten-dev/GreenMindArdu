@@ -113,7 +113,12 @@ Geräte senden über die bereits vorhandene TLS-Verbindung des Raw-Workers, ohne
 zusätzlichen TLS-Heap oder Aufnahmetask. Es wird keine zusätzliche Verbindung
 allein für Live aufgebaut. Raw-Rückstand unterdrückt Vorschaupakete; Bedarfsprüfung
 bleibt begrenzt. Vorschau hat einen separaten 16-Punkte-Ring und verwirft bei
-Überlastung Vorschaupunkte. Live-HTTP nutzt 100 ms Verbindungs-/250 ms Lesegrenzen.
+Überlastung Vorschaupunkte. Live-HTTP nutzt 100 ms Verbindungs-/750 ms Lesegrenzen.
+Die eingebundene Arduino-Bibliothek rundet das TLS-Socket-Limit auf ganze
+Sekunden: 250 ms wurden zu null Sekunden und führten im realen Staging-Test
+zu Antwortfehlern und wiederholtem TLS-Neuaufbau. 750 ms ergeben ein wirksames
+Ein-Sekunden-Socket-Limit; der HTTP-Lesevorgang bleibt auf 750 ms begrenzt.
+Staging kennzeichnet diese Korrektur als rc2; Production-Zielkennungen bleiben rc1.
 Raw-Retry behält seinen unveränderten Block; OTA wird nicht während dessen
 ausstehender Übertragung gestartet. Die physische Dauer-/Heapabnahme bleibt offen.
 
