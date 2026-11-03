@@ -6,7 +6,7 @@ static std::atomic<uint32_t> liveHttpMaximumMs{0}, liveHttpErrors{0}, livePacket
 static portMUX_TYPE liveLock = portMUX_INITIALIZER_UNLOCKED;
 static greenmind::LiveAverager liveAverage;
 static greenmind::LiveRailWindow liveRails;
-static greenmind::SpscQueue<greenmind::LivePoint, 16> livePoints;
+static greenmind::SpscQueue<greenmind::LivePoint, greenmind::liveQueuePoints> livePoints;
 static uint64_t liveOriginMonotonic = 0;
 static uint16_t liveSourceRate = 400, liveRawRate = 400;
 

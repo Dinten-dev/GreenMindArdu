@@ -17,7 +17,7 @@ int main() {
 #ifdef GREENMIND_CLOUD_PRODUCTION
     const std::string version = "v2.15-rc1-raw400-live-";
 #else
-    const std::string version = "v2.15-rc2-raw400-live-";
+    const std::string version = "v2.15-rc3-raw400-live-";
 #endif
 #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
     assert(std::string(firmwareVersion).find(version + "p2-") != std::string::npos);

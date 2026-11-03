@@ -112,7 +112,7 @@ liefern nur für Live 503; bestehende Raw-ACKs und Ablageverträge bleiben erhal
 Geräte senden über die bereits vorhandene TLS-Verbindung des Raw-Workers, ohne
 zusätzlichen TLS-Heap oder Aufnahmetask. Es wird keine zusätzliche Verbindung
 allein für Live aufgebaut. Raw-Rückstand unterdrückt Vorschaupakete; Bedarfsprüfung
-bleibt begrenzt. Vorschau hat einen separaten 16-Punkte-Ring und verwirft bei
+bleibt begrenzt. Vorschau hat einen separaten 64-Punkte-Ring und verwirft bei
 Überlastung Vorschaupunkte. Live-HTTP nutzt 100 ms Verbindungs-/750 ms Lesegrenzen.
 Die eingebundene Arduino-Bibliothek rundet das TLS-Socket-Limit auf ganze
 Sekunden: 250 ms wurden zu null Sekunden und führten im realen Staging-Test
@@ -150,3 +150,28 @@ Software-/Simulatortests ersetzen keine physische Blattberührung. Offen bleiben
 400-Hz-Hardwareabnahme, reale Rate und Zeitfehler, WLAN-/TLS-Latenz, erster Punkt
 und Berührungsreaktion jeweils unter drei Sekunden, Heap und Langzeitverhalten
 unter Raw-Rückstand sowie Freigabeablauf auf separater Testhardware.
+
+
+## Lückenfreie Übertragung bei begrenzter Netzverzögerung
+
+Der Staging-Kandidat rc3 übernimmt bis zu 16 echte Vorschauwerte in ein Paket.
+Der Server bestätigt das Paket samt verbleibendem Zuschauerbedarf. Solange
+solche Bestätigungen eintreffen, entfallen zusätzliche sekündliche Kontrollabfragen
+auf derselben TLS-Verbindung. Alte Geräte verstehen die bisherige Statusangabe
+weiterhin; die Vergrösserung der serverseitigen Paketgrenze ist additiv.
+
+Ein vorbereitetes Paket bleibt bis zur Bestätigung unverändert erhalten.
+Verlorene und beschädigte Antworten führen zur exakt identischen Wiederholung
+mit derselben Sequenz und demselben Rail-Fenster. Die serverseitige Duplikatprüfung
+verhindert doppelte Werte. Ein vorübergehender Kontrollfehler widerruft keinen
+bereits bestätigten Zuschauerbedarf. Abgelaufene oder freigegebene Zuschauer
+werden durch Paketantwort oder nächste Kontrollabfrage weiterhin durchgesetzt.
+
+Der Puffer ist fest auf 64 Punkte begrenzt. Raw-Rückstand unterdrückt alle
+Live-Netzaufrufe. Vorbereitete Pakete werden höchstens 1,5 Sekunden wiederholt,
+unversandte Werte höchstens zwei Sekunden nachgeholt. Längere Ausfälle erzeugen
+weiterhin echte, erkennbare Lücken; es werden keine Messwerte ergänzt.
+Der native Netzwerktest führt das tatsächliche Firmwaremodul mit 450–650 ms
+Antwortzeit, verlorenen/beschädigten Bestätigungen und paralleler echter
+ADC-Erfassung aus. Er verlangt fortlaufende Vorschauframes sowie identische
+Rohdaten und kontrolliertes Abschalten ohne Zuschauer.

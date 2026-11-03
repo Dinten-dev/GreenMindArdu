@@ -4,6 +4,8 @@
 #include <cstring>
 
 namespace greenmind {
+inline constexpr uint8_t liveBatchPoints = 16;
+inline constexpr uint8_t liveQueuePoints = 64;
 inline constexpr char raw400PreviewProfile[] = "raw400-box32-v1";
 inline constexpr char avg380PreviewProfile[] = "avg20ms380-rational-v1";
 
