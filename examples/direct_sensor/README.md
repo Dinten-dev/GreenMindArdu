@@ -1,3 +1,8 @@
+> Source candidate (Step 8): DIRECT now records unfiltered nominal 400 Hz.
+> See [raw400 contract and pending hardware acceptance](../../docs/direct-raw400.md).
+> Published downloads below retain their original accepted 380 Hz behaviour.
+> Do not flash Peter's four office boxes or publish this candidate.
+
 Download the [latest Production Direct ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)
 and follow the [OTA bootstrap guide](../../docs/direct-upgrade.md).
 
@@ -30,9 +35,10 @@ delivery remains independent and retains its existing separate queue.
 
 At startup the allocator preserves at least 1 MiB free PSRAM and chooses a
 power-of-two ring up to 4 MiB, respecting the largest free block. With a 4 MiB
-allocation, full 380 Hz mono PCM16 blocks have 5,349 seconds nominal capacity
-(about 89 minutes). Partial blocks and other formats change that duration.
-No PSRAM means an explicitly labelled 32 KiB RAM fallback (41 nominal seconds)
+allocation, nominal capacity depends on the sample rate and the full per-record
+metadata header. Read the actual `nominal_capacity_s` reported at startup.
+Partial blocks and other formats change that duration.
+No PSRAM means an explicitly labelled 32 KiB RAM fallback (bounded; read its reported nominal capacity)
 if internal heap headroom permits; otherwise recording does not start and an
 allocation error is shown. A fallback is not accepted for the 120-second field
 test. RAM/PSRAM contents do not survive reset or power loss.
@@ -51,11 +57,12 @@ zero new lost samples, complete verified cloud replay across multiple segment
 boundaries, and stable heap during TLS recovery. Keep the previous application
 and NVS pairing data for manual rollback.
 
-Sampling remains 380 Hz with the existing nominal ADC-output calibration.
-The HPK comparison uses a different stored stream (400 Hz acquisition, onboard
-low-pass/notch filtering, four-sample averaging to 100 Hz and mV-times-ten PCM).
-Noise conclusions require original aligned recordings and the actual measurement
-setup; the screenshot alone does not identify a hardware or ADC cause.
+Source DIRECT acquisition now uses the separate unfiltered raw400 path. GATEWAY
+and DUAL retain 380 Hz with avg20ms. Historical HPK files before 23 October 2026
+were 100 Hz with onboard filtering; its later reference stores unfiltered 400 Hz
+using a different mV-times-ten scale. Never infer an encoding from sample rate.
+The new raw400 profile, software validation and separate hardware acceptance are
+specified in [direct-raw400.md](../../docs/direct-raw400.md).
 
 This folder is a separate PlatformIO project for new, explicitly provisioned
 Biolingo v22 ESP32-S3 sensors. The Gateway sensor is built separately in `GreenMindFirmware_Biolingo`; neither target updates an installed sensor automatically.

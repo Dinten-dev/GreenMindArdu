@@ -18,6 +18,9 @@ def main():
     parser.add_argument("--environment", choices=("direct_biolingo_production",
         "direct_biolingo_v22_psram_production"), default="direct_biolingo_v22_psram_production")
     args = parser.parse_args()
+    config = (ROOT / "examples/direct_sensor/src/CloudConfig.h").read_text()
+    if "raw400" in config:
+        raise ValueError("Raw400 requires fresh hardware/receiver acceptance; legacy 380 Hz packaging disabled")
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_commit):
         raise ValueError("Exact source commit required")
     env = args.environment

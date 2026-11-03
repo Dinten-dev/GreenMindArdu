@@ -48,7 +48,11 @@ public:
         const uint32_t value = head_.load(std::memory_order_acquire) - tail;
         return value > capacity_ ? capacity_ : value;
     }
-    uint32_t capacitySeconds380() const { return capacity_ / (sizeof(Header) + 760); }
+    uint32_t capacitySeconds(uint16_t rate, uint8_t channels = 1, uint8_t bits = 16) const {
+        if (!rate || !channels || (bits != 16 && bits != 24)) return 0;
+        return capacity_ / (sizeof(Header) + uint32_t(rate) * channels * (bits / 8));
+    }
+    uint32_t capacitySeconds380() const { return capacitySeconds(380); }
     bool push(const SampleBlock& block) {
         if (!storage_ || !block.valid()) return false;
         const uint32_t bytes = sizeof(Header) + block.byteCount();

@@ -1,12 +1,13 @@
 /**
  * Explicit Direct/DUAL firmware for new/provisioned Biolingo ESP32-S3 devices.
  * OTA is explicit on the N16R8 target; USB bootstrap retains pairing.
- * ADC input: GPIO4 at hardware-clocked 2 kHz; 20 ms moving mean, 380 Hz PCM16.
+ * DIRECT: GPIO4, nominal 400 Hz raw PCM16. GATEWAY/DUAL: avg20ms at 380 Hz.
  * ADS131M04 drivers can submit interleaved SampleBlock PCM24 independently.
  */
 #include <Arduino.h>
 #include <driver/adc.h>
 #include "../../../transport_validation/MainsAverage20ms.h"
+#include "../../../direct_transport/Ad8232Raw400.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -174,6 +175,8 @@ static bool sendDirect(const SampleBlock& block) {
     metadata["first_frame"] = block.firstFrame;
     metadata["frame_count"] = block.frames;
     metadata["sample_rate"] = block.sampleRate;
+    if (block.capture.signalProfile == greenmind::SignalProfile::Ad8232Raw400V1)
+        metadata["signal_profile"] = greenmind::raw400Profile;
     metadata["channels"] = block.channels;
     metadata["sample_bits"] = block.sampleBits;
     JsonArray labels = metadata["channel_labels"].to<JsonArray>();
@@ -331,7 +334,10 @@ static void stopContinuousAdc() {
     adc_digi_deinitialize();
 }
 
+#include "Raw400Acquisition.h"
+
 static void acquisition(void*) {
+    if (mode == Mode::Direct) { acquireRaw400(); return; }
     uint64_t initialSyncEpoch = 0, initialSyncMonotonic = 0;
     if (mode == Mode::Direct || mode == Mode::Dual) {
         while (!syncSnapshot(initialSyncEpoch, initialSyncMonotonic))
@@ -486,7 +492,7 @@ static bool prepareDirectSpool() {
         return false;
     }
     Serial.printf("direct_spool kind=%s bytes=%u nominal_capacity_s=%u volatile=1\n",
-        directPsram ? "PSRAM" : "RAM_LIMITED", bytes, directQueue.capacitySeconds380());
+        directPsram ? "PSRAM" : "RAM_LIMITED", bytes, directQueue.capacitySeconds(mode == Mode::Direct ? 400 : 380));
     return true;
 }
 
@@ -494,7 +500,11 @@ void setup() {
     Serial.begin(115200);
     Serial.printf("firmware=%s\n", greenmind::cloud::firmwareVersion);
 #ifdef GREENMIND_DIRECT_ADC_SELFTEST
-    mode = Mode::Gateway; // The production DIRECT network/time wait is untouched.
+#ifdef GREENMIND_DIRECT_RAW400_SELFTEST
+    mode = Mode::Direct; // Separate offline raw acquisition probe; no identity/network writes.
+#else
+    mode = Mode::Gateway; // Existing filtered probe remains available.
+#endif
     StatusDisplay::init();
     xTaskCreatePinnedToCore(acquisition, "adc-selftest", 4096, nullptr, 2, nullptr, 1);
     return;
@@ -599,6 +609,7 @@ static void updateStatusDisplay() {
 }
 
 static void printAdcStats() {
+    if (mode == Mode::Direct) { printRaw400Stats(); return; }
     const auto voltage = SignalDisplayStats::read();
     Serial.printf("adc_filter=avg20ms raw_hz=2000 output_hz=380 raw_samples=%u raw_clipped=%u output_frames=%u restarts=%u healthy=%d mean_decimv=%u min_decimv=%u max_decimv=%u\n",
         rawConversions.exchange(0), rawClipped.exchange(0), filteredFrames.exchange(0),
@@ -647,7 +658,7 @@ void loop() {
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
         Serial.printf("direct_spool_used=%u capacity=%u nominal_capacity_s=%u psram=%d\n",
-            directQueue.used(), directQueue.capacity(), directQueue.capacitySeconds380(), directPsram);
+            directQueue.used(), directQueue.capacity(), directQueue.capacitySeconds(mode == Mode::Direct ? 400 : 380), directPsram);
         const auto status = directStatus.snapshot();
         Serial.printf("display_upload acks=%u interval_ms=%u age_ms=%u errors=%u http=%d\n",
             status.acknowledgements, status.intervalMs,
