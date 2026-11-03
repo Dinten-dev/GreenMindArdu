@@ -16,17 +16,17 @@ inline constexpr char preferencesNamespace[] = "gmdirectprod";
 #ifdef GREENMIND_DIRECT_OTA
 #ifndef GREENMIND_DIRECT_OTA_VERSION
 #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
-#define GREENMIND_DIRECT_OTA_VERSION "direct-v2.14-rc1-raw400-p2-production"
+#define GREENMIND_DIRECT_OTA_VERSION "direct-v2.15-rc1-raw400-live-p2-production"
 #else
-#define GREENMIND_DIRECT_OTA_VERSION "direct-v2.14-rc1-raw400-p1-production"
+#define GREENMIND_DIRECT_OTA_VERSION "direct-v2.15-rc1-raw400-live-p1-production"
 #endif
 #endif
 inline constexpr char firmwareVersion[] = GREENMIND_DIRECT_OTA_VERSION;
 #else
 #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
-inline constexpr char firmwareVersion[] = "direct-v2.14-rc1-raw400-p2-production";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p2-production";
 #else
-inline constexpr char firmwareVersion[] = "direct-v2.14-rc1-raw400-p1-production";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p1-production";
 #endif
 #endif
 #else
@@ -37,9 +37,9 @@ inline constexpr char label[] = "TESTUMGEBUNG";
 // Preserve already paired Staging devices and their existing credentials.
 inline constexpr char preferencesNamespace[] = "gmdirect";
 #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
-inline constexpr char firmwareVersion[] = "direct-v2.14-rc1-raw400-p2-staging";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p2-staging";
 #else
-inline constexpr char firmwareVersion[] = "direct-v2.14-rc1-raw400-p1-staging";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p1-staging";
 #endif
 #endif
 inline bool acceptsEndpoint(std::string_view candidate) {

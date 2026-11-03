@@ -1,3 +1,7 @@
+> **Step 9 source candidate:** on-demand 12.5 Hz preview, ten-second rail window,
+> existing raw transport and acquisition retained. [Contract and acceptance](docs/direct-demand-live.md).
+> Firmware v2.15 is source-only; no OTA or release replacement.
+
 > **Step 8 source candidate:** DIRECT uses nominal unfiltered 400 Hz; GATEWAY/DUAL
 > retain 380 Hz. [Contract and pending hardware acceptance](docs/direct-raw400.md).
 > Existing release downloads are unchanged; this branch is not a rollout.
@@ -32,7 +36,7 @@ See [all downloads and checksums](docs/downloads.md). Direct v2.11 supports devi
 | Choice | Build target | Runtime |
 | --- | --- | --- |
 | Gateway sensor v1.2.0 | `GreenMindFirmware_Biolingo` / `biolingo_v22` | 380 Hz, existing filters, durable LittleFS spool, local Gateway code |
-| Direct source v2.14 raw400 candidate | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | Nominal unfiltered 400 Hz PCM16; physical acceptance pending, no rollout |
+| Direct source v2.15 raw400/live candidate | `examples/direct_sensor` / `direct_biolingo_v22_psram_ota_production` | Nominal unfiltered 400 Hz PCM16; physical acceptance pending, no rollout |
 | Direct Staging raw400 candidate | `examples/direct_sensor` / `direct_biolingo_v22_psram_test` | Separate endpoint/identity; physical acceptance pending |
 
 DUAL is an explicitly configured comparison mode, not the normal installation choice.

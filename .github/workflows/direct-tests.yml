@@ -19,6 +19,12 @@ jobs:
           /tmp/raw400-test
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined tests/direct_transport/test_raw400_acquisition.cpp -o /tmp/raw400-acquisition-test
           /tmp/raw400-acquisition-test
+      - name: Test demand preview, rail windows and raw acquisition priority
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined tests/direct_transport/test_live_preview.cpp -o /tmp/live-preview-test
+          /tmp/live-preview-test
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined tests/direct_transport/test_demand_live_acquisition.cpp -o /tmp/demand-acquisition-test
+          /tmp/demand-acquisition-test
       - name: Test real 20 ms mains filter
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/direct_transport/test_mains_average.cpp -o /tmp/mains-test

@@ -39,6 +39,7 @@ static void raw400Callback(void*) {
     const int raw = adc1_get_raw(ADC1_CHANNEL_3);
     const uint32_t duration = static_cast<uint32_t>(esp_timer_get_time() - started);
     const bool valid = raw >= 0 && raw <= 4095;
+    liveRawTap(raw, raw400Clock.originUs() + frame * greenmind::raw400IntervalUs);
     if (missing) timingDropped.fetch_add(static_cast<uint32_t>(missing));
     const bool queued = valid && raw400Queue.push(
         Raw400Reading{frame, raw400Clock.originUs(), static_cast<uint16_t>(raw)});
@@ -100,6 +101,7 @@ static void appendRaw400(const Raw400Reading& reading, uint64_t syncEpoch, uint6
             adcFault.store(true);
             return;
         }
+        liveCaptureOrigin(reading.originUs, 400, 400);
         captureMetadata.sessionStartUs = sessionStartUs;
         captureMetadata.syncEpochUs = syncEpoch;
         hasClock.store(true, std::memory_order_release);
@@ -119,6 +121,7 @@ static void appendRaw400(const Raw400Reading& reading, uint64_t syncEpoch, uint6
     const uint16_t index = acquisitionBlock.frames++;
     acquisitionBlock.payload[index * 2] = static_cast<uint8_t>(pcm);
     acquisitionBlock.payload[index * 2 + 1] = static_cast<uint8_t>(uint16_t(pcm) >> 8);
+    liveFrameTap(reading.frame, double(reading.raw) * 3300.0 / 4095.0);
     SignalDisplayStats::record(deciMv); // Display only; never fed back into PCM.
     raw400Stored.fetch_add(1);
     if (acquisitionBlock.frames == greenmind::raw400Hz) {

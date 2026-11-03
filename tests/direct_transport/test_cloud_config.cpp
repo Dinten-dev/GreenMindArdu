@@ -15,9 +15,9 @@ int main() {
     assert(!acceptsEndpoint("https://green-mind.ch/api/v1/direct-ingest/chunks"));
 #endif
     #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
-    assert(std::string(firmwareVersion).find("v2.14-rc1-raw400-p2-") != std::string::npos);
+    assert(std::string(firmwareVersion).find("v2.15-rc1-raw400-live-p2-") != std::string::npos);
 #else
-    assert(std::string(firmwareVersion).find("v2.14-rc1-raw400-p1-") != std::string::npos);
+    assert(std::string(firmwareVersion).find("v2.15-rc1-raw400-live-p1-") != std::string::npos);
 #endif
     assert(acceptsEndpoint(std::string(base) + "/chunks"));
     assert(!acceptsEndpoint(std::string(endpoint) + "?redirect=1"));
