@@ -70,5 +70,5 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror -I examples/direct_sensor/.pio/libdeps/direct_biolingo_production/ArduinoJson/src tests/direct_transport/test_acknowledgement.cpp -o /tmp/acknowledgement-test
           /tmp/acknowledgement-test
-          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -I examples/direct_sensor/.pio/libdeps/direct_biolingo_production/ArduinoJson/src tests/direct_transport/test_live_network.cpp -o /tmp/live-network-test
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -isystem examples/direct_sensor/.pio/libdeps/direct_biolingo_production/ArduinoJson/src tests/direct_transport/test_live_network.cpp -o /tmp/live-network-test
           /tmp/live-network-test
