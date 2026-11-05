@@ -101,6 +101,8 @@ struct {
         }
         for (JsonObject item : packet["points"].as<JsonArray>()) {
             const uint64_t frame = item["frame"];
+            const uint64_t age = esp_timer_get_time() - liveOriginMonotonic - frame * 2500;
+            assert(age <= 5000000); // Actual server acceptance, including HTTP wait.
             if (!receivedFrames.empty()) {
                 if (frame != receivedFrames.back() + 32)
                     std::cerr << "preview gap after " << receivedFrames.back() << " before " << frame << " at " << millis() << " ms\n";
@@ -112,8 +114,8 @@ struct {
         committedSequence = sequence;
         committedBody = body;
         response = demandResponse("accepted");
-        if ((lostAcks == 0 && receivedFrames.size() > 30) ||
-            (lostAcks == 1 && receivedFrames.size() > 100)) {
+        if (!testColdHandshake && ((lostAcks == 0 && receivedFrames.size() > 30) ||
+            (lostAcks == 1 && receivedFrames.size() > 100))) {
             ++lostAcks;
             response = lostAcks == 1 ? "" : "{";
             return lostAcks == 1 ? -11 : 200; // Lost or truncated committed ACK.
@@ -163,7 +165,7 @@ static bool sendDirect(const SampleBlock& block) {
         previousPending = block;
         retryRaw = true;
         ++rawFailures;
-        advance(testColdHandshake ? 100 : 750);
+        advance(750);
         directTransport.stop();
         return false;
     }
@@ -182,7 +184,8 @@ int main(int argc, char**) {
         directWorkerStep();
         advance(10);
     }
-    assert(duplicates == 2 && lostAcks == 2);
+    assert(duplicates == (testColdHandshake ? 0 : 2));
+    assert(lostAcks == (testColdHandshake ? 0 : 2));
     assert(receivedFrames.size() >= (testColdHandshake ? 450 : 225));
     assert(liveDropped.load() == 0 && timingDropped.load() == 0);
     assert(raw400Stats.queueDropped == 0 && raw400Stats.missingSlots == 0);

@@ -168,7 +168,7 @@ bereits bestätigten Zuschauerbedarf. Abgelaufene oder freigegebene Zuschauer
 werden durch Paketantwort oder nächste Kontrollabfrage weiterhin durchgesetzt.
 
 Der Puffer ist fest auf 64 Punkte begrenzt. Vorbereitete Pakete werden höchstens
-1,5 Sekunden wiederholt, unversandte Werte bei Raw400 höchstens vier Sekunden
+1,5 Sekunden wiederholt, unversandte Werte bei Raw400 höchstens 4,5 Sekunden
 (im bisherigen 380-Hz-Pfad zwei Sekunden) nachgeholt. Längere Ausfälle erzeugen
 weiterhin echte, erkennbare Lücken; es werden keine Messwerte ergänzt.
 Der native Netzwerktest führt das tatsächliche Firmwaremodul mit 450–650 ms

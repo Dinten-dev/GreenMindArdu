@@ -97,7 +97,7 @@ static void directLiveTick(bool rawPending, bool reconnectAllowed = false) {
         const uint64_t cutoff = sessionStartUs + uint64_t(esp_timer_get_time() - liveOriginMonotonic);
         while (count < greenmind::liveBatchPoints && livePoints.pop(point)) {
             const uint64_t stamp = sessionStartUs + point.frame * 1000000ULL / liveSourceRate;
-            const uint64_t retention = liveSourceRate == 400 ? 4000000 : 2000000;
+            const uint64_t retention = liveSourceRate == 400 ? 4500000 : 2000000;
             if (stamp + retention >= cutoff) batch[count++] = point;
             else liveDropped.fetch_add(1);
         }
