@@ -51,6 +51,16 @@ class PassiveObserverTests(unittest.TestCase):
             self.assertEqual(OBSERVER.public_line(value), "[redacted diagnostic]")
         self.assertNotIn("gmd_", OBSERVER.public_line("diagnostic gmd_example"))
 
+    def test_timeout_fragments_cannot_split_reset_reason_or_bypass_redaction(self):
+        lines = OBSERVER.DiagnosticLines()
+        self.assertEqual(lines.feed(b"pass"), [])
+        self.assertEqual(lines.feed(b"word=private"), [])
+        self.assertEqual([OBSERVER.public_line(x) for x in lines.feed(b"\nrst:0x")], ["[redacted diagnostic]"])
+        self.assertEqual(OBSERVER.boot_reason(lines.feed(b"15 (USB_UART_CHIP_RESET)\n")[0])["rom_code"], 21)
+        self.assertEqual(lines.feed(b"x" * 9000), [])
+        self.assertLessEqual(len(lines.pending), 8192)
+        self.assertEqual(lines.feed(b"private\nhealthy\n"), ["[oversized diagnostic discarded]", "healthy"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,6 +49,31 @@ def boot_reason(line):
     return {"rom_code": code, "source": {21: "usb_uart", 22: "usb_jtag"}.get(code, "other")}
 
 
+class DiagnosticLines:
+    """Keep timeout-split serial lines intact before redaction or parsing."""
+
+    def __init__(self):
+        self.pending = bytearray()
+        self.discarding = False
+
+    def feed(self, data):
+        lines = []
+        for value in data:
+            if value == 10:
+                line = "[oversized diagnostic discarded]" if self.discarding else self.pending.decode(errors="replace").strip()
+                if line:
+                    lines.append(line)
+                self.pending.clear()
+                self.discarding = False
+            elif not self.discarding:
+                if len(self.pending) == 8192:
+                    self.pending.clear()
+                    self.discarding = True
+                else:
+                    self.pending.append(value)
+        return lines
+
+
 def observe(port, duration, events, private=None, stop_file=None):
     device = PassiveSerial(port=None, baudrate=115200, timeout=0.2, write_timeout=3)
     device.port = port
@@ -68,25 +93,25 @@ def observe(port, duration, events, private=None, stop_file=None):
         events.flush()
 
     event({"event": "opened", "modem_lines_written": False, "automatic_reopen": False})
+    lines = DiagnosticLines()
     try:
         while not stopped and time.monotonic() < deadline:
             if stop_file and stop_file.exists():
                 break
             try:
-                line = device.readline().decode(errors="replace").strip()
+                fragment = device.read_until(b"\n", size=2048)
             except (serial.SerialException, OSError) as error:
                 event({"event": "disconnected", "error_type": type(error).__name__})
                 return 1
-            if not line:
-                continue
-            if private:
-                private.write(json.dumps({"at": time.time(), "line": line}) + "\n")
-                private.flush()
-            value = {"event": "serial", "line": public_line(line)}
-            reason = boot_reason(line)
-            if reason:
-                value["reset"] = reason
-            event(value)
+            for line in lines.feed(fragment):
+                if private:
+                    private.write(json.dumps({"at": time.time(), "line": line}) + "\n")
+                    private.flush()
+                value = {"event": "serial", "line": public_line(line)}
+                reason = boot_reason(line)
+                if reason:
+                    value["reset"] = reason
+                event(value)
     finally:
         device.close()
         event({"event": "closed", "automatic_reopen": False})
