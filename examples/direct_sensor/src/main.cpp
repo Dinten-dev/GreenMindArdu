@@ -108,6 +108,11 @@ static String provisionLine;
 static std::atomic<uint32_t> rawConversions{0}, rawClipped{0}, adcRestarts{0}, filteredFrames{0};
 static std::atomic<bool> adcHealthy{false}, adcFault{false};
 #include "../../../transport_validation/SignalDisplayStats.h"
+#include "DemandLive.h"
+#include "../../../direct_transport/DirectLiveBudget.h"
+
+static WiFiClientSecure directTransport;
+static HTTPClient directHttp;
 
 static void makeSessionId() {
     uint8_t bytes[16];
@@ -153,8 +158,8 @@ static void submit(SampleBlock& block) {
 static bool sendDirect(const SampleBlock& block) {
     // Owned exclusively by directWorker. Retain the TLS socket across uploads;
     // constructing these per block made a handshake slower than acquisition.
-    static WiFiClientSecure transport;
-    static HTTPClient http;
+    auto& transport = directTransport;
+    auto& http = directHttp;
     if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
     const String digest = sha256(block.payload, block.byteCount());
     JsonDocument metadata;
@@ -192,14 +197,16 @@ static bool sendDirect(const SampleBlock& block) {
         return false;
     }
     transport.setCACert(certificate.c_str());
-    transport.setHandshakeTimeout(10);
+    const auto budget = greenmind::directNetworkBudget(
+        mode == Mode::Direct && greenmind::liveDemand(millis(), liveUntil.load()));
+    transport.setHandshakeTimeout(budget.handshakeSeconds);
     if (!http.begin(transport, endpoint)) {
         directStatus.record(false, -1, millis(), 0);
         return false;
     }
     http.setReuse(true);
-    http.setConnectTimeout(5000);
-    http.setTimeout(10000);
+    http.setConnectTimeout(budget.connectMs);
+    http.setTimeout(budget.readMs);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.addHeader("Authorization", String("Bearer ") + token);
     http.addHeader("Content-Type", "application/octet-stream");
@@ -275,21 +282,13 @@ static bool setupAllowed() {
 #endif
 }
 
+#include "DemandLiveNetwork.h"
+#include "DirectWorker.h"
+
 static void directWorker(void*) {
-    uint32_t backoff = 1000;
     for (;;) {
-        directOtaTick();
-        if (!directQueue.peek(directPending)) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
-        while (!sendDirect(directPending)) {
-            vTaskDelay(pdMS_TO_TICKS(backoff + esp_random() % 500));
-            backoff = min(uint32_t(60000), backoff * 2);
-        }
-        if (!directQueue.acknowledge(directPending.sequence)) {
-            // An internal ownership failure must never silently discard data.
-            Serial.println("direct_spool_ack_invariant_failed");
-            for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        backoff = 1000;
+        directWorkerStep();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -373,6 +372,7 @@ static void acquisition(void*) {
             }
             if (!origin) {
                 origin = captureOrigin + warmupUs;
+                liveCaptureOrigin(origin, 380, 2000);
                 if (mode == Mode::Direct || mode == Mode::Dual) {
                     // Estimate from the SNTP-confirmed monotonic mapping, never
                     // from upload time or a later system-clock adjustment.
@@ -419,6 +419,7 @@ static void acquisition(void*) {
             if (sample->type2.channel != ADC1_CHANNEL_3 || sample->type2.unit != 0) continue;
             const uint16_t raw = sample->type2.data;
             const uint64_t sampledAt = captureOrigin + rawIndex++ * 500ULL;
+            liveRawTap(raw, sampledAt);
             rawConversions.fetch_add(1);
             if (raw == 0 || raw == 4095) rawClipped.fetch_add(1);
             if (!average.add(raw) || sampledAt < origin + frame * 1000000ULL / 380) continue;
@@ -428,6 +429,7 @@ static void acquisition(void*) {
                 timingDropped.fetch_add(static_cast<uint32_t>(due - frame)); frame = due;
             }
         const uint16_t deciMv = static_cast<uint16_t>(std::lround(average.mean() * (33000.0 / 4095.0)));
+        liveFrameTap(frame, deciMv * 0.1);
         SignalDisplayStats::record(deciMv);
         filteredFrames.fetch_add(1);
         if (!acquisitionBlock.frames) acquisitionBlock.firstFrame = frame;
@@ -655,6 +657,9 @@ void loop() {
             millis(), StatusDisplay::ready() ? "ready" : "unavailable", portalActive,
             portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
         printAdcStats();
+        Serial.printf("direct_live active=%d packets=%u preview_dropped=%u http_errors=%u max_http_ms=%u\n",
+            greenmind::liveDemand(millis(), liveUntil.load()), livePackets.exchange(0),
+            liveDropped.exchange(0), liveHttpErrors.exchange(0), liveHttpMaximumMs.exchange(0));
         Serial.printf("direct_dropped=%u gateway_dropped=%u timing_dropped=%u\n",
             directDropped.load(), gatewayDropped.load(), timingDropped.load());
         Serial.printf("direct_spool_used=%u capacity=%u nominal_capacity_s=%u psram=%d\n",
