@@ -17,7 +17,12 @@ struct String : std::string {
 };
 inline String operator+(const std::string& left, uint16_t value) { return String(left + std::to_string(value)); }
 constexpr int WL_CONNECTED = 3, HTTPC_DISABLE_FOLLOW_REDIRECTS = 0;
-struct { int status() { return WL_CONNECTED; } } WiFi;
+struct {
+    bool sleeping = true;
+    unsigned sleepChanges = 0;
+    int status() { return WL_CONNECTED; }
+    bool setSleep(bool value) { sleeping = value; ++sleepChanges; return true; }
+} WiFi;
 struct {
     bool online = true;
     bool connected() { return online; }
@@ -170,6 +175,7 @@ int main() {
     assert(liveDropped.load() == 0 && timingDropped.load() == 0);
     assert(raw400Stats.queueDropped == 0 && raw400Stats.missingSlots == 0);
     assert(!greenmind::liveDemand(millis(), liveUntil.load()));
+    assert(WiFi.sleeping && WiFi.sleepChanges == 2);
     // Active push ACKs replace control polling; only idle checks remain later.
     assert(controlRequests >= 4 && controlRequests < 10);
     assert(submitted.size() >= 24 && rawAcknowledged >= 24);

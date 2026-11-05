@@ -9,6 +9,13 @@ static void directWorkerStep() {
     if (failed) return;
     const bool interactive = mode == Mode::Direct &&
         greenmind::liveDemand(millis(), liveUntil.load());
+    // Sleeping between DTIM beacons adds receive latency on phone hotspots.
+    // Restore the normal radio power policy as soon as viewer demand expires.
+    static bool radioAwake = false;
+    if (interactive != radioAwake && WiFi.setSleep(!interactive)) {
+        radioAwake = interactive;
+        Serial.printf("direct_live_radio awake=%d\n", radioAwake);
+    }
     if (!retained) {
         directOtaTick(); // OTA may drain the spool; never run during retained retries.
         if (!directQueue.peek(directPending)) { directLiveTick(false); return; }

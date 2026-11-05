@@ -189,6 +189,10 @@ Während dieser Wiederholpause darf Live dieselbe TLS-Instanz neu verbinden.
 Nach einem Raw-ACK darf ein begrenzter Vorschauaufruf auch bei kleinem Rückstand
 (bis 8 KiB) laufen; grösserer Rückstand priorisiert ausschliesslich Rohdaten.
 Es gibt weiterhin genau einen Netzwerk-Worker und keine zweite TLS-Instanz.
+Bei aktivem Direct-Live wird WLAN-Modem-Sleep ausgeschaltet, damit empfangene
+Antworten nicht auf den nächsten DTIM-Zyklus warten. Nach Ende des bestätigten
+Zuschauerbedarfs wird die normale Stromsparregel wiederhergestellt. Ein
+fehlgeschlagener Wechsel wird erneut versucht; DUAL/Gateway werden nicht geweckt.
 Die Erfassung läuft unabhängig weiter. Der native Test führt den tatsächlichen
 Worker mit Rohupload-Timeouts, identischen Wiederholungen, verlorenen Live-ACKs,
 fortlaufenden Vorschauframes und unveränderten PCM-Werten aus.
