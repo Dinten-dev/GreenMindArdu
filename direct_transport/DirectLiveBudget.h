@@ -6,7 +6,7 @@ struct DirectNetworkBudget {
     uint32_t readMs, connectMs, handshakeSeconds;
 };
 inline constexpr DirectNetworkBudget directNetworkBudget(bool interactive) {
-    return interactive ? DirectNetworkBudget{750, 250, 1}
+    return interactive ? DirectNetworkBudget{750, 250, 5}
                        : DirectNetworkBudget{10000, 5000, 10};
 }
 inline constexpr bool previewAfterRawAck(bool interactive, uint32_t queuedBytes) {

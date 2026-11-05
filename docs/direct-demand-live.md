@@ -168,7 +168,7 @@ bereits bestätigten Zuschauerbedarf. Abgelaufene oder freigegebene Zuschauer
 werden durch Paketantwort oder nächste Kontrollabfrage weiterhin durchgesetzt.
 
 Der Puffer ist fest auf 64 Punkte begrenzt. Vorbereitete Pakete werden höchstens
-1,5 Sekunden wiederholt, unversandte Werte bei Raw400 höchstens drei Sekunden
+1,5 Sekunden wiederholt, unversandte Werte bei Raw400 höchstens vier Sekunden
 (im bisherigen 380-Hz-Pfad zwei Sekunden) nachgeholt. Längere Ausfälle erzeugen
 weiterhin echte, erkennbare Lücken; es werden keine Messwerte ergänzt.
 Der native Netzwerktest führt das tatsächliche Firmwaremodul mit 450–650 ms
@@ -179,7 +179,7 @@ Rohdaten und kontrolliertes Abschalten ohne Zuschauer.
 ## Gemeinsamer Worker ohne lange Raw-Blockade (Staging rc4)
 
 Bei aktivem Direct-Live erhält auch der Rohupload eine 750-ms-Lesegrenze,
-250-ms-Verbindungsgrenze und eine Sekunde TLS-Handshake-Zeit. Dies sind Grenzen
+250-ms-Verbindungsgrenze und fünf Sekunden TLS-Handshake-Zeit. Dies sind Grenzen
 einzelner Netzwerkoperationen, keine garantierte Gesamtlatenz. Ohne Zuschauer und
 in DUAL bleiben die bisherigen Raw-Grenzen unverändert. Ein fehlgeschlagener
 Rohupload bleibt bis zum passenden ACK unverändert im Spool; Wiederholung folgt

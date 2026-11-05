@@ -27,7 +27,7 @@ struct {
     bool online = true;
     bool connected() { return online; }
     void stop() { online = false; }
-    void setHandshakeTimeout(int seconds) { assert(seconds == 1); }
+    void setHandshakeTimeout(int seconds) { assert(seconds == 5); }
 } directTransport;
 static greenmind::Mode mode = greenmind::Mode::Direct;
 using greenmind::Mode;
@@ -37,6 +37,7 @@ static const char generationId[] = "00000000-0000-4000-8000-000000000003";
 static uint64_t nextSample = 1000000;
 static uint32_t viewerUntil = 21000, controlRequests = 0, postRequests = 0, duplicates = 0;
 static unsigned lostAcks = 0;
+static bool testColdHandshake = false;
 static std::string committedBody;
 static uint32_t committedSequence = 0;
 static std::vector<uint64_t> receivedFrames;
@@ -69,7 +70,7 @@ struct {
         JsonDocument ack;
         if (status) ack["status"] = status;
         ack["enabled"] = millis() < viewerUntil;
-        ack["expires_in_ms"] = millis() < viewerUntil ? viewerUntil - millis() : 0;
+        ack["expires_in_ms"] = millis() < viewerUntil ? std::min(uint32_t(30000), viewerUntil - millis()) : 0;
         ack["generation"] = generationId;
         String result;
         serializeJson(ack, result);
@@ -84,7 +85,7 @@ struct {
     int POST(const String& body) {
         ++postRequests;
         // Transport callbacks keep acquiring real samples during a slow request.
-        advance(postRequests % 3 == 0 ? 650 : 450);
+        advance(testColdHandshake ? 100 : (postRequests % 3 == 0 ? 650 : 450));
         if (millis() >= viewerUntil) {
             response = "{\"error\":\"live_not_requested\"}";
             return 409;
@@ -100,7 +101,11 @@ struct {
         }
         for (JsonObject item : packet["points"].as<JsonArray>()) {
             const uint64_t frame = item["frame"];
-            if (!receivedFrames.empty()) assert(frame == receivedFrames.back() + 32);
+            if (!receivedFrames.empty()) {
+                if (frame != receivedFrames.back() + 32)
+                    std::cerr << "preview gap after " << receivedFrames.back() << " before " << frame << " at " << millis() << " ms\n";
+                assert(frame == receivedFrames.back() + 32);
+            }
             assert(item["samples"] == 32);
             receivedFrames.push_back(frame);
         }
@@ -123,6 +128,7 @@ struct {
 static size_t rawAcknowledged = 0;
 static unsigned rawFailures = 0, rawAttempts = 0;
 static bool retryRaw = false;
+static bool coldHandshakeTested = false;
 static SampleBlock directPending, previousPending;
 struct {
     bool peek(SampleBlock& block) {
@@ -149,11 +155,15 @@ static bool sendDirect(const SampleBlock& block) {
         assert(block.byteCount() == previousPending.byteCount());
         assert(!memcmp(block.payload, previousPending.payload, block.byteCount()));
         retryRaw = false;
+        if (testColdHandshake && !coldHandshakeTested) {
+            advance(3200);
+            coldHandshakeTested = true;
+        }
     } else if (block.sequence % 7 == 3) {
         previousPending = block;
         retryRaw = true;
         ++rawFailures;
-        advance(750);
+        advance(testColdHandshake ? 100 : 750);
         directTransport.stop();
         return false;
     }
@@ -163,23 +173,28 @@ static bool sendDirect(const SampleBlock& block) {
 }
 #include "../../examples/direct_sensor/src/DirectWorker.h"
 
-int main() {
+int main(int argc, char**) {
+    testColdHandshake = argc > 1;
+    if (testColdHandshake) viewerUntil = 41000;
     try { acquireRaw400(); } catch (StopTask&) {}
     advance(10);
-    while (millis() < 26000) {
+    while (millis() < (testColdHandshake ? 46000 : 26000)) {
         directWorkerStep();
         advance(10);
     }
     assert(duplicates == 2 && lostAcks == 2);
-    assert(receivedFrames.size() >= 225);
+    assert(receivedFrames.size() >= (testColdHandshake ? 450 : 225));
     assert(liveDropped.load() == 0 && timingDropped.load() == 0);
     assert(raw400Stats.queueDropped == 0 && raw400Stats.missingSlots == 0);
     assert(!greenmind::liveDemand(millis(), liveUntil.load()));
     assert(WiFi.sleeping && WiFi.sleepChanges == 2);
     // Active push ACKs replace control polling; only idle checks remain later.
-    assert(controlRequests >= 4 && controlRequests < 10);
-    assert(submitted.size() >= 24 && rawAcknowledged >= 24);
+    assert(controlRequests >= 4 && controlRequests < (testColdHandshake ? 15 : 10));
+    assert(submitted.size() >= (testColdHandshake ? 44 : 24));
+    assert(rawAcknowledged >= (testColdHandshake ? 44 : 24));
     assert(rawFailures >= 3 && rawAttempts > rawAcknowledged);
+    assert(coldHandshakeTested == testColdHandshake);
+    assert(greenmind::directNetworkBudget(true).handshakeSeconds == 5);
     assert(greenmind::directNetworkBudget(true).readMs == 750);
     assert(greenmind::directNetworkBudget(false).readMs == 10000);
     assert(greenmind::directNetworkBudget(false).handshakeSeconds == 10);
