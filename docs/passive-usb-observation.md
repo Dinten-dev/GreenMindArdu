@@ -16,7 +16,7 @@ retains the complete transcript for local diagnosis. Do not publish private
 transcripts or network credentials. Check uninterrupted uptime and the same
 server-side session before and after opening/closing the observer.
 
-The actual C++ sensor firmware remains rc3 for this host-tool correction. No
+The observer correction is independent of the sensor firmware version. No
 firmware flash or saved WLAN/cloud-identity change is needed to change observers.
 The pseudo-terminal regression test checks opening, reading, closing and reopening
 without any modem-line write and verifies that HUPCL stays cleared.

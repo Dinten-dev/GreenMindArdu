@@ -37,9 +37,9 @@ inline constexpr char label[] = "TESTUMGEBUNG";
 // Preserve already paired Staging devices and their existing credentials.
 inline constexpr char preferencesNamespace[] = "gmdirect";
 #if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
-inline constexpr char firmwareVersion[] = "direct-v2.15-rc3-raw400-live-p2-staging";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc4-raw400-live-p2-staging";
 #else
-inline constexpr char firmwareVersion[] = "direct-v2.15-rc3-raw400-live-p1-staging";
+inline constexpr char firmwareVersion[] = "direct-v2.15-rc4-raw400-live-p1-staging";
 #endif
 #endif
 inline bool acceptsEndpoint(std::string_view candidate) {

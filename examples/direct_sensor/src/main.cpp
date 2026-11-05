@@ -109,6 +109,7 @@ static std::atomic<uint32_t> rawConversions{0}, rawClipped{0}, adcRestarts{0}, f
 static std::atomic<bool> adcHealthy{false}, adcFault{false};
 #include "../../../transport_validation/SignalDisplayStats.h"
 #include "DemandLive.h"
+#include "../../../direct_transport/DirectLiveBudget.h"
 
 static WiFiClientSecure directTransport;
 static HTTPClient directHttp;
@@ -196,14 +197,16 @@ static bool sendDirect(const SampleBlock& block) {
         return false;
     }
     transport.setCACert(certificate.c_str());
-    transport.setHandshakeTimeout(10);
+    const auto budget = greenmind::directNetworkBudget(
+        mode == Mode::Direct && greenmind::liveDemand(millis(), liveUntil.load()));
+    transport.setHandshakeTimeout(budget.handshakeSeconds);
     if (!http.begin(transport, endpoint)) {
         directStatus.record(false, -1, millis(), 0);
         return false;
     }
     http.setReuse(true);
-    http.setConnectTimeout(5000);
-    http.setTimeout(10000);
+    http.setConnectTimeout(budget.connectMs);
+    http.setTimeout(budget.readMs);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.addHeader("Authorization", String("Bearer ") + token);
     http.addHeader("Content-Type", "application/octet-stream");
@@ -280,31 +283,12 @@ static bool setupAllowed() {
 }
 
 #include "DemandLiveNetwork.h"
+#include "DirectWorker.h"
 
 static void directWorker(void*) {
-    uint32_t backoff = 1000;
     for (;;) {
-        // OTA may drain directPending, so it runs only outside retained retries.
-        directOtaTick();
-        if (!directQueue.peek(directPending)) {
-            directLiveTick(false);
-            vTaskDelay(pdMS_TO_TICKS(10));
-            continue;
-        }
-        while (!sendDirect(directPending)) {
-            const uint32_t started = millis(), wait = backoff + esp_random() % 500;
-            backoff = min(uint32_t(60000), backoff * 2);
-            while (millis() - started < wait) {
-                directLiveTick(true);
-                vTaskDelay(pdMS_TO_TICKS(10));
-            }
-        }
-        if (!directQueue.acknowledge(directPending.sequence)) {
-            Serial.println("direct_spool_ack_invariant_failed");
-            for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        backoff = 1000;
-        directLiveTick(directQueue.used() != 0);
+        directWorkerStep();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 

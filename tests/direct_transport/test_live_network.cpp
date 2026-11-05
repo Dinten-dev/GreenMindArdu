@@ -4,6 +4,7 @@
 #include "../../examples/direct_sensor/src/CloudConfig.h"
 #include <ArduinoJson.h>
 #include <sstream>
+#include "../../direct_transport/DirectLiveBudget.h"
 
 struct String : std::string {
     using std::string::string;
@@ -21,6 +22,7 @@ struct {
     bool online = true;
     bool connected() { return online; }
     void stop() { online = false; }
+    void setHandshakeTimeout(int seconds) { assert(seconds == 1); }
 } directTransport;
 static greenmind::Mode mode = greenmind::Mode::Direct;
 using greenmind::Mode;
@@ -49,7 +51,7 @@ static void advance(uint32_t ms) {
 }
 struct {
     String path, response;
-    bool begin(decltype(directTransport)&, const String& value) { path = value; return true; }
+    bool begin(decltype(directTransport)& transport, const String& value) { path = value; transport.online = true; return true; }
     void setReuse(bool) {}
     void setConnectTimeout(int value) { assert(value == 100); }
     void setTimeout(int value) { assert(value >= 500 && value <= 1000); }
@@ -111,17 +113,56 @@ struct {
 } directHttp;
 #include "../../examples/direct_sensor/src/DemandLiveNetwork.h"
 
+// Exercise the production worker, including raw failures and immutable retries,
+// while the real acquisition module fills subsequent blocks during HTTP waits.
+static size_t rawAcknowledged = 0;
+static unsigned rawFailures = 0, rawAttempts = 0;
+static bool retryRaw = false;
+static SampleBlock directPending, previousPending;
+struct {
+    bool peek(SampleBlock& block) {
+        if (rawAcknowledged == submitted.size()) return false;
+        block = submitted[rawAcknowledged];
+        block.sequence = rawAcknowledged;
+        return true;
+    }
+    bool acknowledge(uint64_t sequence) {
+        assert(sequence == rawAcknowledged);
+        ++rawAcknowledged;
+        return true;
+    }
+    uint32_t used() { return (submitted.size() - rawAcknowledged) * 1000; }
+} directQueue;
+static void directOtaTick() {}
+static uint32_t esp_random() { return 42; }
+using std::min;
+static bool sendDirect(const SampleBlock& block) {
+    ++rawAttempts;
+    if (retryRaw) {
+        assert(block.sequence == previousPending.sequence);
+        assert(block.firstFrame == previousPending.firstFrame);
+        assert(block.byteCount() == previousPending.byteCount());
+        assert(!memcmp(block.payload, previousPending.payload, block.byteCount()));
+        retryRaw = false;
+    } else if (block.sequence % 7 == 3) {
+        previousPending = block;
+        retryRaw = true;
+        ++rawFailures;
+        advance(750);
+        directTransport.stop();
+        return false;
+    }
+    advance(150);
+    directTransport.online = true;
+    return true;
+}
+#include "../../examples/direct_sensor/src/DirectWorker.h"
+
 int main() {
     try { acquireRaw400(); } catch (StopTask&) {}
     advance(10);
-    size_t rawAcknowledged = 0;
     while (millis() < 26000) {
-        if (submitted.size() > rawAcknowledged) {
-            advance(150); // Raw uploads and retries get the same sole TLS worker.
-            ++rawAcknowledged;
-            directTransport.online = true;
-        }
-        directLiveTick(submitted.size() > rawAcknowledged);
+        directWorkerStep();
         advance(10);
     }
     assert(duplicates == 2 && lostAcks == 2);
@@ -132,6 +173,14 @@ int main() {
     // Active push ACKs replace control polling; only idle checks remain later.
     assert(controlRequests >= 4 && controlRequests < 10);
     assert(submitted.size() >= 24 && rawAcknowledged >= 24);
+    assert(rawFailures >= 3 && rawAttempts > rawAcknowledged);
+    assert(greenmind::directNetworkBudget(true).readMs == 750);
+    assert(greenmind::directNetworkBudget(false).readMs == 10000);
+    assert(greenmind::directNetworkBudget(false).handshakeSeconds == 10);
+    assert(greenmind::rawRetryWait(true, 60000, 499) < 600);
+    assert(greenmind::rawRetryWait(false, 60000, 499) == 60499);
+    assert(!greenmind::previewAfterRawAck(true, 8193));
+    assert(!greenmind::previewAfterRawAck(false, 0));
     for (const auto& block : submitted) {
         for (uint16_t i = 0; i < block.frames; ++i) {
             const uint64_t frame = block.firstFrame + i;

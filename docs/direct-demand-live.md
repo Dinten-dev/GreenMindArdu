@@ -111,8 +111,8 @@ Raw-Ingest ruft den RAM-Eigentümer nie auf. Ausfall oder deaktivierte Livefunkt
 liefern nur für Live 503; bestehende Raw-ACKs und Ablageverträge bleiben erhalten.
 Geräte senden über die bereits vorhandene TLS-Verbindung des Raw-Workers, ohne
 zusätzlichen TLS-Heap oder Aufnahmetask. Es wird keine zusätzliche Verbindung
-allein für Live aufgebaut. Raw-Rückstand unterdrückt Vorschaupakete; Bedarfsprüfung
-bleibt begrenzt. Vorschau hat einen separaten 64-Punkte-Ring und verwirft bei
+parallel für Live aufgebaut. Der gemeinsame Worker priorisiert Rohdaten und
+begrenzt Vorschauarbeit. Vorschau hat einen separaten 64-Punkte-Ring und verwirft bei
 Überlastung Vorschaupunkte. Live-HTTP nutzt 100 ms Verbindungs-/750 ms Lesegrenzen.
 Die eingebundene Arduino-Bibliothek rundet das TLS-Socket-Limit auf ganze
 Sekunden: 250 ms wurden zu null Sekunden und führten im realen Staging-Test
@@ -167,11 +167,28 @@ verhindert doppelte Werte. Ein vorübergehender Kontrollfehler widerruft keinen
 bereits bestätigten Zuschauerbedarf. Abgelaufene oder freigegebene Zuschauer
 werden durch Paketantwort oder nächste Kontrollabfrage weiterhin durchgesetzt.
 
-Der Puffer ist fest auf 64 Punkte begrenzt. Raw-Rückstand unterdrückt alle
-Live-Netzaufrufe. Vorbereitete Pakete werden höchstens 1,5 Sekunden wiederholt,
-unversandte Werte höchstens zwei Sekunden nachgeholt. Längere Ausfälle erzeugen
+Der Puffer ist fest auf 64 Punkte begrenzt. Vorbereitete Pakete werden höchstens
+1,5 Sekunden wiederholt, unversandte Werte bei Raw400 höchstens drei Sekunden
+(im bisherigen 380-Hz-Pfad zwei Sekunden) nachgeholt. Längere Ausfälle erzeugen
 weiterhin echte, erkennbare Lücken; es werden keine Messwerte ergänzt.
 Der native Netzwerktest führt das tatsächliche Firmwaremodul mit 450–650 ms
 Antwortzeit, verlorenen/beschädigten Bestätigungen und paralleler echter
 ADC-Erfassung aus. Er verlangt fortlaufende Vorschauframes sowie identische
 Rohdaten und kontrolliertes Abschalten ohne Zuschauer.
+
+## Gemeinsamer Worker ohne lange Raw-Blockade (Staging rc4)
+
+Bei aktivem Direct-Live erhält auch der Rohupload eine 750-ms-Lesegrenze,
+250-ms-Verbindungsgrenze und eine Sekunde TLS-Handshake-Zeit. Dies sind Grenzen
+einzelner Netzwerkoperationen, keine garantierte Gesamtlatenz. Ohne Zuschauer und
+in DUAL bleiben die bisherigen Raw-Grenzen unverändert. Ein fehlgeschlagener
+Rohupload bleibt bis zum passenden ACK unverändert im Spool; Wiederholung folgt
+bei aktivem Live nach 500–599 ms statt wachsendem Backoff.
+
+Während dieser Wiederholpause darf Live dieselbe TLS-Instanz neu verbinden.
+Nach einem Raw-ACK darf ein begrenzter Vorschauaufruf auch bei kleinem Rückstand
+(bis 8 KiB) laufen; grösserer Rückstand priorisiert ausschliesslich Rohdaten.
+Es gibt weiterhin genau einen Netzwerk-Worker und keine zweite TLS-Instanz.
+Die Erfassung läuft unabhängig weiter. Der native Test führt den tatsächlichen
+Worker mit Rohupload-Timeouts, identischen Wiederholungen, verlorenen Live-ACKs,
+fortlaufenden Vorschauframes und unveränderten PCM-Werten aus.

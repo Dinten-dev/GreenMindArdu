@@ -2,7 +2,7 @@
 
 // Only directWorker owns HTTP/TLS. Acquisition remains independent and raw
 // backlog always wins. A bounded pending body survives a lost preview ACK.
-static void directLiveTick(bool rawPending) {
+static void directLiveTick(bool rawPending, bool reconnectAllowed = false) {
     static uint32_t nextControl = 0, nextPacket = 0, sequence = 0, pendingSince = 0;
     static char generation[37] = {};
     static bool wasActive = false;
@@ -14,8 +14,10 @@ static void directLiveTick(bool rawPending) {
         if (wasActive) nextControl = 0;
         wasActive = false; clearPending();
     }
-    if (rawPending || WiFi.status() != WL_CONNECTED || !hasClock.load() || !directTransport.connected()) return;
+    if (rawPending || WiFi.status() != WL_CONNECTED || !hasClock.load() ||
+        (!directTransport.connected() && !reconnectAllowed)) return;
     const auto begin = [](const String& path) {
+        directTransport.setHandshakeTimeout(1);
         if (!directHttp.begin(directTransport, String(greenmind::cloud::base) + "/devices/" + deviceId + path)) return false;
         directHttp.setReuse(true);
         directHttp.setConnectTimeout(100);
@@ -93,7 +95,8 @@ static void directLiveTick(bool rawPending) {
         const uint64_t cutoff = sessionStartUs + uint64_t(esp_timer_get_time() - liveOriginMonotonic);
         while (count < greenmind::liveBatchPoints && livePoints.pop(point)) {
             const uint64_t stamp = sessionStartUs + point.frame * 1000000ULL / liveSourceRate;
-            if (stamp + 2000000 >= cutoff) batch[count++] = point;
+            const uint64_t retention = liveSourceRate == 400 ? 3000000 : 2000000;
+            if (stamp + retention >= cutoff) batch[count++] = point;
             else liveDropped.fetch_add(1);
         }
         if (!count) return;
