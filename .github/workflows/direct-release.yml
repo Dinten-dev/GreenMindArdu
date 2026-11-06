@@ -12,6 +12,8 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with: {python-version: '3.12'}
+      - name: Install pinned build and USB test dependencies
+        run: python -m pip install platformio==6.1.19 pyserial==3.5
       - name: Verify USB layout and OTA contract
         run: |
           python -m unittest discover -s tests -v
@@ -21,7 +23,6 @@ jobs:
           /tmp/mains-test
       - name: Build software candidate
         run: |
-          python -m pip install platformio==6.1.19
           platformio run --project-dir examples/direct_sensor -e direct_biolingo_v22_psram_ota_production
       # CI builds are not hardware acceptance and may have different binary hashes.
       # Publication uses package_direct_ota_release.py with the exact tested binary

@@ -1,5 +1,9 @@
 # Direct-to-Cloud v2.11-rc1 avg20ms: USB bootstrap, then cloud OTA
 
+This guide describes the published 380-Hz package. For current `develop` raw400
+and Staging Live, use the [separate development guide](develop-live.md).
+Its rc4 source is not a replacement download or a new OTA assignment.
+
 For **Biolingo v22 / ESP32-S3-WROOM-1-N16R8**, 16 MiB flash,
 8 MiB octal PSRAM, **Production / DIRECT mode** only.
 

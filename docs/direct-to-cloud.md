@@ -3,6 +3,10 @@
 For Biolingo v22 / ESP32-S3 with 16 MB flash and AD8232.
 Current Production download: Direct v2.11-rc1 avg20ms PSRAM/OTA candidate. No Raspberry Pi is required.
 
+This installation guide applies to the published 380-Hz package. Current
+`develop` raw400 and Staging Live have a [separate guide](develop-live.md);
+the source candidate does not replace these release binaries.
+
 ## Download and install
 
 [Latest Production ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)

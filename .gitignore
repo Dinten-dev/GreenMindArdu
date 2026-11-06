@@ -49,5 +49,6 @@ secrets.h
 secrets.ini
 
 # ── Local diagnostics ─────────────────────────────
+private-observation/
 *.log
 *.core

@@ -1,16 +1,23 @@
-> **Step 9 source candidate:** on-demand 12.5 Hz preview, ten-second rail window,
-> existing raw transport and acquisition retained. [Contract and acceptance](docs/direct-demand-live.md).
-> Firmware v2.15 is source-only; no OTA or release replacement.
-
-> **Step 8 source candidate:** DIRECT uses nominal unfiltered 400 Hz; GATEWAY/DUAL
-> retain 380 Hz. [Contract and pending hardware acceptance](docs/direct-raw400.md).
-> Existing release downloads are unchanged; this branch is not a rollout.
-
 # GreenMind sensor firmware
 
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
-Current downloads use local hotspot/web setup. Direct v2.11-rc1 adds a hardware-clocked 20 ms mains average, physical flash-size checks and a separate 8 MiB bootstrap. N16R8 cloud OTA was checked on one attached sensor; other boards and measurement quality require hardware acceptance.
+Published downloads use local hotspot/web setup. The published Direct v2.11-rc1 package uses a hardware-clocked 20 ms mains average at 380 Hz; it is separate from the newer source on `develop`.
+
+## Current develop source
+
+`develop` contains Direct v2.15 raw400 and on-demand Live, including the Staging
+rc4 recovery changes. DIRECT stores nominal unfiltered 400 Hz; GATEWAY/DUAL and
+the separate Gateway firmware retain 380 Hz. Live shows 12.5 real preview values
+per second, a ten-second rail measurement and temporary shared markers.
+
+The user confirmed Live operation on separate Staging hardware and requested
+that tests stop. This does not complete endurance or physical-touch acceptance.
+Merging source does not publish a binary, assign OTA or update installed boards.
+
+[Develop build and operation guide](docs/develop-live.md) ·
+[Live contract](docs/direct-demand-live.md) ·
+[Passive USB diagnostics](docs/passive-usb-observation.md)
 
 ## Download and install
 
@@ -64,10 +71,11 @@ Use Python 3.12 and PlatformIO Core 6.1.19. Build commands do not install firmwa
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install platformio==6.1.19
+python -m pip install platformio==6.1.19 pyserial==3.5
 python -m unittest discover -s tests -v
 pio run --project-dir GreenMindFirmware_Biolingo -e biolingo_v22
 pio run --project-dir examples/direct_sensor -e direct_biolingo_test -e direct_biolingo_production
+pio run --project-dir examples/direct_sensor -e direct_biolingo_v22_psram_test
 ```
 
 Only run `./flash-sensor.sh` after reading the Gateway installation guide and backing up the target sensor.

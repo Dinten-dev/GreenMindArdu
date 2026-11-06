@@ -1,5 +1,15 @@
 # Downloads and installation
 
+## Develop source versus published downloads
+
+As of 6 November 2026, `develop` contains Direct v2.15 raw400 and Staging Live
+rc4. Follow the [develop guide](develop-live.md) to build that source. The
+published `direct-latest` manifest still identifies
+`direct-hotspot-v2.11-rc1-avg20ms-production`, at 380 Hz. Source integration
+does not replace its assets or assign an update to an installed sensor.
+
+## Published packages
+
 The [v2.11 avg20ms release candidate](direct-avg20ms.md) adds hardware-clocked 20 ms
 averaging, an 8 MiB new-sensor bootstrap and a physical flash-size guard.
 The exact N16R8 OTA image passed the attached-sensor sequence; generic 8 MiB
@@ -34,8 +44,10 @@ Direct-to-Gateway uses a Gateway sensor code, a sensor-local web form and a regi
 Both sensor forms are available through `GreenMind-Sensor-XXXX` at `http://192.168.4.1`.
 Gateway registration uses its own separate dashboard code. These codes are not interchangeable.
 
-For a Staging test only, use the separate [Direct Staging v2.8 ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-staging-2.8.zip),
-the Staging dashboard, and that package's manifest. Never provision Production credentials into Staging.
+The historical [Direct Staging v2.8 ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/direct-staging-2.8.zip)
+does not implement the current raw400/Live candidate. Use the
+[develop guide](develop-live.md) for current Staging source and its separate
+identity. Never provision Production credentials into Staging.
 
 ## Source repositories
 

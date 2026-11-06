@@ -1,7 +1,8 @@
 # Direct raw400 – Schritt 8, Softwarekandidat
 
-03.11.2026. Zielrate **400 Hz**, nominaler Abstand **2500 µs**.
-Keine Geräte geflasht, keine OTA-Zuweisung, kein Release veröffentlicht.
+Vertrag seit 03.11.2026. Zielrate **400 Hz**, nominaler Abstand **2500 µs**.
+Aktueller Entwicklungsstand: [develop und Staging](develop-live.md).
+Separates Staging-Testgerät eingerichtet; keine neue Release- oder OTA-Verteilung.
 **Physische Rate, Jitter, Speicherstabilität und 24-h-Dauertest bleiben offen.**
 
 ## Erfassung und Profile

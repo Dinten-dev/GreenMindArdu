@@ -1,16 +1,18 @@
 # Direct-Live bei Bedarf — Schritt 9
 
-Stand: 03.11.2026. Softwarekandidat auf Schritt 8; kein Deployment und keine
-Firmware-Verteilung. Die physische Abnahme von Schritt 8 und die Messung
-Blattberührung → Bildschirm unter drei Sekunden bleiben offen.
+Stand: 06.11.2026. Der aktuelle `develop`-Quellstand enthält raw400 und die
+Staging-Korrekturen rc4. Live wurde auf separater Staging-Hardware verwendet;
+der Benutzer bestätigte die Funktion und beendete die Tests. Dauerabnahme und
+Blattberührung → Bildschirm unter drei Sekunden sind damit nicht nachgewiesen.
+Quellstand, veröffentlichte Downloads und Geräteverteilung bleiben getrennt;
+siehe [aktuellen Entwicklungsstand](develop-live.md).
 
 ## Verhalten und Datenvertrag
 
 Jede neu geöffnete Direct-Messansicht startet mit 24 Stunden. Live aktiviert eine
 eigene Vorschau mit 30, 60 oder 180 Sekunden. Sprachauswahl und Livefenster bleiben
 beim Sprachwechsel erhalten. Deutsch, Englisch, Französisch und Italienisch
-enthalten sämtliche neuen Bedienelemente und Statusmeldungen. Die zusätzlichen
-historischen Zeiträume bleiben bis zur Oberflächenvereinfachung in Schritt 11.
+enthalten sämtliche neuen Bedienelemente und Statusmeldungen.
 
 Ein Zuschauer hält eine eigene 30-Sekunden-Freigabe, erneuert alle zehn Sekunden.
 Ausblenden, Verlassen oder Schliessen beendet nur seine Freigabe; bei verlorener
@@ -18,8 +20,10 @@ Beendigungsanfrage greift der Ablauf. Ohne Zuschauer beendet das Gerät die Vors
 bei der nächsten Kontrolle, spätestens am zuletzt bestätigten Ablauf.
 Die Raw-Aufzeichnung hängt nicht von diesen Freigaben ab.
 
-Die Firmware prüft Bedarf jede Sekunde und sendet etwa alle 400 ms bis zu acht
-Punkte; der Browser fragt spätestens alle 500 ms erneut ab, solange die Verbindung
+Die Firmware prüft Bedarf etwa jede Sekunde, wenn der Raw-Worker verfügbar ist,
+und sendet etwa alle 400 ms bis zu 16 Punkte. Bestätigte Livepakete erneuern den
+Bedarf ohne zusätzliche sekündliche Kontrollabfrage. Der Browser fragt spätestens
+alle 500 ms erneut ab, solange die Verbindung
 funktioniert. Fehler lösen einen begrenzten Wiederholungsabstand bis fünf Sekunden
 aus; veraltete Daten bleiben sichtbar gekennzeichnet. Alte Firmware erhält nach
 drei Sekunden ohne Livekontrolle einen Aktualisierungshinweis. Kein automatisches
@@ -118,14 +122,15 @@ Die eingebundene Arduino-Bibliothek rundet das TLS-Socket-Limit auf ganze
 Sekunden: 250 ms wurden zu null Sekunden und führten im realen Staging-Test
 zu Antwortfehlern und wiederholtem TLS-Neuaufbau. 750 ms ergeben ein wirksames
 Ein-Sekunden-Socket-Limit; der HTTP-Lesevorgang bleibt auf 750 ms begrenzt.
-Staging kennzeichnet diese Korrektur als rc2; Production-Zielkennungen bleiben rc1.
+Die erste Timeoutkorrektur hiess rc2; der aktuelle Staging-Kandidat heisst rc4.
+Production-Quellzielkennungen bleiben rc1; das ist kein veröffentlichtes Release.
 Raw-Retry behält seinen unveränderten Block; OTA wird nicht während dessen
 ausstehender Übertragung gestartet. Die physische Dauer-/Heapabnahme bleibt offen.
 
-## Vorbereitete, deaktivierte Bereitstellung
+## Bereitstellung und Rücknahme
 
 DIRECT_LIVE_ENABLED ist standardmässig false. GreenMindDB/docker-compose.live.yml ist ein
-optionaler Overlay für eine spätere geprüfte Bereitstellung zusammen mit der
+optionaler Overlay für eine explizite Bereitstellung zusammen mit der
 bestehenden Direct-Konfiguration. DIRECT_LIVE_SOCKET muss auf denselben privaten
 Socket in API und Eigentümer zeigen. Beide Dienste verwenden Betriebskennung
 10001. Zuerst neuen Server und RAM-Eigentümer auf Testumgebung prüfen, danach
@@ -133,10 +138,10 @@ separate Testhardware. Vor Aktivierung gelten bestehende TLS-, Organisations-
 und Raw-Annahmebedingungen weiter. Rücknahme: Live deaktivieren und Eigentümer
 stoppen; Raw-Ingest bleibt verfügbar.
 
-Der Overlay wurde vorbereitet, nicht produktiv gestartet. Keine Migration,
-Aufbewahrung, Löschung, OTA-Verteilung oder Release-Ersetzung ist Teil dieses
-Schritts. Peters vier Büroboxen und GmLive bleiben unberührt. Ersatz und spätere
-Abschaltung erst nach physischer Abnahme und abgestimmter Übergabe.
+Staging verwendet die Live-Funktion bereits. Daraus folgt keine Production-
+Freigabe, Änderung der Aufbewahrung, Löschung, OTA-Verteilung oder Ersetzung
+veröffentlichter Downloads. Weitere Büroboxwechsel und eine Abschaltung von
+GmLive erfordern eine eigene Abnahme und abgestimmte Übergabe.
 
 ## Nachweise und verbleibende Abnahme
 

@@ -1,14 +1,16 @@
-> Source candidate (Step 8): DIRECT now records unfiltered nominal 400 Hz.
-> See [raw400 contract and pending hardware acceptance](../../docs/direct-raw400.md).
-> Published downloads below retain their original accepted 380 Hz behaviour.
-> Do not flash Peter's four office boxes or publish this candidate.
+> Current `develop`: Direct v2.15 raw400 with on-demand Live; Staging uses rc4.
+> DIRECT records nominal unfiltered 400 Hz; GATEWAY/DUAL retain 380 Hz.
+> [Current build and operation guide](../../docs/develop-live.md) ·
+> [Live contract](../../docs/direct-demand-live.md).
+> Published downloads below retain their original 380 Hz behaviour.
+> Source integration does not authorize an office-box update or binary release.
 
 Download the [latest Production Direct ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip)
 and follow the [OTA bootstrap guide](../../docs/direct-upgrade.md).
 
 # Direct firmware and explicit DUAL development
 
-## v2.10-rc1 Production OTA
+## Retained OTA architecture, introduced in v2.10-rc1
 
 `direct_biolingo_v22_psram_ota_production` adds same-origin HTTPS device authentication,
 per-device/source-version assignments, bounded SHA-256 downloads, independent flash
@@ -18,7 +20,7 @@ layout; NVS pairing is retained. OTA operates only in DIRECT mode on physical N1
 See the [USB bootstrap and update contract](../../docs/direct-upgrade.md).
 The `ota_trial` and `ota_reject_boot` targets are local test images, never downloads.
 
-## Retained v2.9-rc1 PSRAM builds
+## PSRAM architecture, introduced in v2.9-rc1
 
 The explicit `direct_biolingo_v22_psram_test` and
 `direct_biolingo_v22_psram_production` targets select the existing Biolingo v22
