@@ -6,6 +6,8 @@ USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plan
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
 Published downloads use local hotspot/web setup. The published Direct v2.11-rc1 package uses a hardware-clocked 20 ms mains average at 380 Hz; it is separate from the newer v2.15 source on `main` and `develop`.
 
+[N8R8 build and installation guide](docs/direct-n8r8.md) · 8 MiB flash, 8 MiB PSRAM; manual USB, no OTA.
+
 ## Current v2.15 source
 
 `main` and `develop` contain Direct v2.15 raw400 and on-demand Live, including the Staging

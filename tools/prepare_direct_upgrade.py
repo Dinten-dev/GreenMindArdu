@@ -53,6 +53,7 @@ def application_partition(table, image_size, active_offset=None, flash_bytes=0x1
 def verify_package(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
     targets = {"direct_biolingo_production": 0x800000,
+               "direct_biolingo_n8r8_production": 0x800000,
                "direct_biolingo_v22_psram_production": 0x1000000}
     if (manifest["environment"] not in targets
             or manifest["distribution"] != "manual-usb-application-only"
