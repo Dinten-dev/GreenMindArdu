@@ -2,7 +2,7 @@
 
 Vertrag seit 03.11.2026. Zielrate **400 Hz**, nominaler Abstand **2500 µs**.
 Aktueller Entwicklungsstand: [develop und Staging](develop-live.md).
-Separates Staging-Testgerät eingerichtet; keine neue Release- oder OTA-Verteilung.
+Separates Staging-Testgerät eingerichtet; v2.15 ist als gekennzeichneter Downloadkandidat verfügbar, ohne OTA-Verteilung.
 **Physische Rate, Jitter, Speicherstabilität und 24-h-Dauertest bleiben offen.**
 
 ## Erfassung und Profile
@@ -111,7 +111,6 @@ Dateitreue, Signalreferenz und Speichertrend erfordern zusätzliche Belege.
 
 Die drei bisherigen Direct-Paketierer sind für diesen Kandidaten gesperrt, damit
 kein raw400-Binary als 380-Hz-/avg20ms-Release etikettiert wird. Neue Paket-/OTA-
-Einführung erst nach vollständiger Hardware- und Receiver-Abnahme. Keine Tags,
-kein `direct-latest`, keine OTA-Kampagne und kein Eingriff in Peters vier Büroboxen.
+Einführung erst nach vollständiger Hardware- und Receiver-Abnahme. Die separat veröffentlichten [v2.15-Anwendungskandidaten](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107) sind kein hardwareabgenommenes Release. Kein Austausch von `direct-latest`, keine OTA-Kampagne und kein Eingriff in Peters vier Büroboxen.
 Zwei ihrer Kennungen sind bekannt (94b8/94cc); ohne vollständige Zuordnung keine
 Freigabe für einen Büroboxwechsel. GmLive bleibt bis zum nativen Ersatz bestehen.

@@ -9,6 +9,8 @@ published `direct-latest` manifest still identifies
 `direct-hotspot-v2.11-rc1-avg20ms-production`, at 380 Hz. Source integration
 does not replace its assets or assign an update to an installed sensor.
 
+The [v2.15 Direct-to-Cloud candidate release](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107) provides distinct 8 MiB and N16R8 application binaries. N16R8 includes OTA support. These newly built Production images have not undergone physical acceptance; they are not complete installation packages and are not assigned to devices.
+
 ## Published packages
 
 The [v2.11 avg20ms release candidate](direct-avg20ms.md) adds hardware-clocked 20 ms

@@ -13,14 +13,13 @@ describes server roles and rollout boundaries.
 | Current Direct source | v2.15, nominal raw400 with on-demand Live |
 | Staging default identity | `direct-v2.15-rc4-raw400-live-p1-staging` |
 | Default protocol | v1; v2 remains explicitly opt-in |
-| Published Direct package | v2.11-rc1 avg20ms, 380 Hz; inspect its release manifest |
+| v2.15 Direct application candidates | [8 MiB and N16R8 downloads](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107); physical acceptance pending |
+| Published Direct latest package | v2.11-rc1 avg20ms, 380 Hz; inspect its release manifest |
 | Gateway and DUAL | Existing 380-Hz path and separate credentials/archives |
 
 Live was used on separate Staging hardware. The user confirmed operation and
 requested testing to stop. Network unavailability affected the run; it is not
-a completed endurance or physical-touch latency acceptance. No new field
-binary, public download replacement or office-device OTA follows from merging
-this source. The [raw400 acceptance criteria](direct-raw400.md) remain applicable.
+a completed endurance or physical-touch latency acceptance. The downloadable v2.15 application candidates are newly built Production images and have not been physically accepted. No public `direct-latest` replacement or office-device OTA follows from merging this source. The [raw400 acceptance criteria](direct-raw400.md) remain applicable.
 
 ## Build without flashing
 

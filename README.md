@@ -13,7 +13,7 @@ per second, a ten-second rail measurement and temporary shared markers.
 
 The user confirmed Live operation on separate Staging hardware and requested
 that tests stop. This does not complete endurance or physical-touch acceptance.
-Merging source does not publish a binary, assign OTA or update installed boards.
+The separate [v2.15 Direct-to-Cloud binary candidates](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107) are available for 8 MiB and N16R8 hardware; the latter includes OTA. Neither binary has been physically accepted. Publishing does not assign OTA or update installed boards.
 
 [Build and operation guide](docs/develop-live.md) ·
 [Live contract](docs/direct-demand-live.md) ·
@@ -24,6 +24,7 @@ Merging source does not publish a binary, assign OTA or update installed boards.
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
+| Direct v2.15 raw400 / Live binary candidates | [8 MiB and N16R8 downloads](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107) | Application images; hardware acceptance pending |
 | Direct v2.15 raw400 / Live source candidate | [Download source ZIP](https://github.com/Dinten-dev/GreenMindArdu/archive/refs/heads/main.zip) | [Build and acceptance guide](docs/develop-live.md) |
 | Direct-to-Cloud sensor, Production v2.11-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
@@ -81,7 +82,7 @@ pio run --project-dir examples/direct_sensor -e direct_biolingo_v22_psram_test
 
 Only run `./flash-sensor.sh` after reading the Gateway installation guide and backing up the target sensor.
 Native transport tests and seven Direct builds run in GitHub Actions.
-Release tags validate software candidates; publication requires `tools/package_direct_ota_release.py`
+Release tags validate software candidates; accepted production package publication requires `tools/package_direct_ota_release.py`
 with the exact physically tested binary and hardware report. Only that verified package
 updates `direct-latest`. A CI rebuild cannot silently replace it. Gateway formatting uses clang-format 18.1.8.
 
