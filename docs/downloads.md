@@ -1,9 +1,10 @@
 # Downloads and installation
 
-## Develop source versus published downloads
+## v2.15 source versus published firmware
 
-As of 6 November 2026, `develop` contains Direct v2.15 raw400 and Staging Live
-rc4. Follow the [develop guide](develop-live.md) to build that source. The
+As of 7 November 2026, `main` and `develop` contain Direct v2.15 raw400 and Staging Live
+rc4. [Download the main source ZIP](https://github.com/Dinten-dev/GreenMindArdu/archive/refs/heads/main.zip)
+and follow the [build guide](develop-live.md). This source ZIP is not an installable firmware package. The
 published `direct-latest` manifest still identifies
 `direct-hotspot-v2.11-rc1-avg20ms-production`, at 380 Hz. Source integration
 does not replace its assets or assign an update to an installed sensor.

@@ -2,11 +2,11 @@
 
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
-Published downloads use local hotspot/web setup. The published Direct v2.11-rc1 package uses a hardware-clocked 20 ms mains average at 380 Hz; it is separate from the newer source on `develop`.
+Published downloads use local hotspot/web setup. The published Direct v2.11-rc1 package uses a hardware-clocked 20 ms mains average at 380 Hz; it is separate from the newer v2.15 source on `main` and `develop`.
 
-## Current develop source
+## Current v2.15 source
 
-`develop` contains Direct v2.15 raw400 and on-demand Live, including the Staging
+`main` and `develop` contain Direct v2.15 raw400 and on-demand Live, including the Staging
 rc4 recovery changes. DIRECT stores nominal unfiltered 400 Hz; GATEWAY/DUAL and
 the separate Gateway firmware retain 380 Hz. Live shows 12.5 real preview values
 per second, a ten-second rail measurement and temporary shared markers.
@@ -15,7 +15,7 @@ The user confirmed Live operation on separate Staging hardware and requested
 that tests stop. This does not complete endurance or physical-touch acceptance.
 Merging source does not publish a binary, assign OTA or update installed boards.
 
-[Develop build and operation guide](docs/develop-live.md) ·
+[Build and operation guide](docs/develop-live.md) ·
 [Live contract](docs/direct-demand-live.md) ·
 [Passive USB diagnostics](docs/passive-usb-observation.md)
 
@@ -24,6 +24,7 @@ Merging source does not publish a binary, assign OTA or update installed boards.
 
 | Component | Download | Installation guide |
 | --- | --- | --- |
+| Direct v2.15 raw400 / Live source candidate | [Download source ZIP](https://github.com/Dinten-dev/GreenMindArdu/archive/refs/heads/main.zip) | [Build and acceptance guide](docs/develop-live.md) |
 | Direct-to-Cloud sensor, Production v2.11-rc1 / PSRAM + OTA candidate | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/direct-latest/direct-to-cloud-production.zip) | [Direct USB upgrade](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/direct-upgrade.md) |
 | Direct-to-Gateway sensor v1.2.0 | [Firmware ZIP](https://github.com/Dinten-dev/GreenMindArdu/releases/download/manual-2026-10-10/gateway-sensor-1.2.0.zip) | [Gateway sensor USB installation](https://github.com/Dinten-dev/GreenMindArdu/blob/main/docs/gateway-sensor.md) |
 | Raspberry Pi Gateway, manual maintenance candidate | [Installer-free maintenance ZIP](https://github.com/Dinten-dev/GreenMindRPIv1/releases/download/manual-2026-10-10/gateway-maintenance-2026-10-10.zip) | [Gateway installation and maintenance](https://github.com/Dinten-dev/GreenMindRPIv1/blob/main/docs/gateway-installation.md) |

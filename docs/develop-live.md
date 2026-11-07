@@ -1,7 +1,7 @@
-# Develop: Direct raw400 and Staging Live
+# Direct v2.15: raw400 and Staging Live
 
-Updated 6 November 2026. `develop` is the shared integration branch for the
-current source. The corresponding cloud source is
+Updated 7 November 2026. `main` and `develop` contain the current firmware
+source. The corresponding cloud source is
 [GreenMindDB develop](https://github.com/Dinten-dev/GreenMindDB/tree/develop).
 Its [integration guide](https://github.com/Dinten-dev/GreenMindDB/blob/develop/docs/DEVELOP-LIVE.md)
 describes server roles and rollout boundaries.
@@ -27,7 +27,7 @@ this source. The [raw400 acceptance criteria](direct-raw400.md) remain applicabl
 Use Python 3.12, PlatformIO Core 6.1.19 and the pinned project dependencies:
 
 ```bash
-git clone --branch develop https://github.com/Dinten-dev/GreenMindArdu.git
+git clone --branch main https://github.com/Dinten-dev/GreenMindArdu.git
 cd GreenMindArdu
 python3.12 -m venv .venv
 source .venv/bin/activate
