@@ -13,7 +13,7 @@ describes server roles and rollout boundaries.
 | Current Direct source | v2.15, nominal raw400 with on-demand Live |
 | Staging default identity | `direct-v2.15-rc4-raw400-live-p1-staging` |
 | Default protocol | v1; v2 remains explicitly opt-in |
-| v2.15 Direct application candidates | [8 MiB and N16R8 downloads](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107); physical acceptance pending |
+| v2.15 Direct installation candidates | [8 MiB and N16R8 downloads](https://github.com/Dinten-dev/GreenMindArdu/releases/tag/direct-v2.15-rc1-build-20261107); physical acceptance pending |
 | Published Direct latest package | v2.11-rc1 avg20ms, 380 Hz; inspect its release manifest |
 | Gateway and DUAL | Existing 380-Hz path and separate credentials/archives |
 

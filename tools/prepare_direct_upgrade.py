@@ -56,7 +56,7 @@ def verify_package(directory):
                "direct_biolingo_v22_psram_production": 0x1000000}
     if (manifest["environment"] not in targets
             or manifest["distribution"] != "manual-usb-application-only"
-            or manifest["sample_rate"] != 380 or manifest["endpoint"] != "https://green-mind.ch"):
+            or manifest["sample_rate"] not in (380, 400) or manifest["endpoint"] != "https://green-mind.ch"):
         raise ValueError("Wrong firmware variant")
     if manifest["flash_bytes"] != targets[manifest["environment"]]:
         raise ValueError("Flash capacity differs from the selected firmware target")

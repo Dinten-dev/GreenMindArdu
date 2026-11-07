@@ -111,7 +111,7 @@ def verify_package(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
     if (manifest.get("environment") != "direct_biolingo_v22_psram_ota_production" or
             manifest.get("ota_profile") != "biolingo-v22-n16r8-direct-ota-v1" or
-            manifest.get("sample_rate") != 380 or manifest.get("endpoint") != "https://green-mind.ch"):
+            manifest.get("sample_rate") not in (380, 400) or manifest.get("endpoint") != "https://green-mind.ch"):
         raise ValueError("Wrong firmware variant")
     expected = {"firmware.bin", "bootloader.bin", "partitions.bin", "boot_app0.bin"}
     if set(manifest["files"]) != expected:

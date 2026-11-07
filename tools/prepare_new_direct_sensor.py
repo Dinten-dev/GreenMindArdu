@@ -12,7 +12,7 @@ def bootstrap_plan(directory, backup, detected):
     manifest = json.loads((directory / 'manifest.json').read_text())
     if (manifest.get('environment') != 'direct_biolingo_production' or
             manifest.get('distribution') != 'new-unprovisioned-usb-bootstrap-only' or
-            manifest.get('flash_bytes') != 0x800000 or manifest.get('sample_rate') != 380 or
+            manifest.get('flash_bytes') != 0x800000 or manifest.get('sample_rate') not in (380, 400) or
             manifest.get('endpoint') != 'https://green-mind.ch'):
         raise ValueError('Wrong bootstrap variant')
     require_capacity(detected, 0x800000, len(backup))
