@@ -1,5 +1,7 @@
 # Direct-to-Cloud v2.15: Installation als Kandidat
 
+**Production-Hinweis (07.11.2026):** Der aktive Direct-Empfänger akzeptiert das v2.15-raw400-Profil derzeit nicht. HTTP 422 und Datenverlust sind möglich. v2.15 nicht auf Production-Geräten installieren, bis der Empfänger kompatibel ausgerollt und geprüft ist. Der 8-MiB-Build aktiviert kein PSRAM und ist kein N8R8-Build.
+
 Die Live-Ansicht wurde mit einem separaten Sensor über den Hotspot auf Staging getestet und vom Nutzer bestätigt. Diese Production-Anwendungsabbilder wurden danach neu gebaut. Eine separate 400-Hz-Langzeitabnahme sowie der OTA-Vorwärts-, Rückwärts- und Rollback-Test dieser Bilder stehen aus. Die Pakete sind Vorabversionen, keine automatische Aktualisierung oder Freigabe für Peters Büroboxen.
 
 ## Hardware und Paket auswählen

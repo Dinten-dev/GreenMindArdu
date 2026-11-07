@@ -1,5 +1,7 @@
 # GreenMind sensor firmware
 
+**Production-Hinweis (07.11.2026):** Der aktive Direct-Empfänger akzeptiert das v2.15-raw400-Profil derzeit nicht. HTTP 422 und Datenverlust sind möglich. v2.15 nicht auf Production-Geräten installieren, bis der Empfänger kompatibel ausgerollt und geprüft ist. Der 8-MiB-Build aktiviert kein PSRAM und ist kein N8R8-Build.
+
 USB bootstrap and sensor firmware for Biolingo v22 / ESP32-S3-WROOM-1-N16R8 plant sensors using AD8232.
 Choose Direct-to-Cloud for Wi-Fi upload to the cloud, or Direct-to-Gateway for upload through a Raspberry Pi.
 Published downloads use local hotspot/web setup. The published Direct v2.11-rc1 package uses a hardware-clocked 20 ms mains average at 380 Hz; it is separate from the newer v2.15 source on `main` and `develop`.
