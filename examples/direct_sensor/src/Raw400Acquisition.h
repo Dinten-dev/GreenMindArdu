@@ -2,8 +2,9 @@
 
 // Included after submit()/OTA declarations. One real ADC conversion per timer
 // event; callbacks never allocate, access the network or wait for an uploader.
-// S3 continuous-ADC DMA has a 611 Hz lower bound in the pinned SDK, hence the
-// 2500 us esp_timer task here rather than a falsely labelled 400 Hz DMA stream.
+// S3 continuous-ADC DMA has a 611 Hz lower bound in the pinned SDK. Legacy
+// profiles use the 2500 us timer; durable profiles explicitly retain one in
+// five untouched 2 kHz hardware conversions in Raw400DmaAcquisition.h.
 struct Raw400Reading {
     uint64_t frame, originUs;
     uint16_t raw;
@@ -130,7 +131,14 @@ static void appendRaw400(const Raw400Reading& reading, uint64_t syncEpoch, uint6
     }
 }
 
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+#include "Raw400DmaAcquisition.h"
+#endif
+
 static void acquireRaw400() {
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+    acquireRaw400Dma(); return;
+#endif
     uint64_t epoch = 0, monotonic = 0;
 #ifndef GREENMIND_DIRECT_ADC_SELFTEST
     while (!syncSnapshot(epoch, monotonic)) vTaskDelay(pdMS_TO_TICKS(50));
@@ -169,6 +177,9 @@ static void acquireRaw400() {
 }
 
 static void printRaw400Stats() {
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+    printRaw400DmaStats(); return;
+#endif
     portENTER_CRITICAL(&raw400StatsLock);
     const uint64_t now = esp_timer_get_time();
     const uint64_t windowStart = raw400WindowStart;

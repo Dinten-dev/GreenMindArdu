@@ -14,6 +14,9 @@ int main() {
     assert(std::string(preferencesNamespace) == "gmdirect");
     assert(!acceptsEndpoint("https://green-mind.ch/api/v1/direct-ingest/chunks"));
 #endif
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+    assert(std::string(firmwareVersion).find("direct-v2.16-rc3-dmaflash400-p1-") == 0);
+#else
 #ifdef GREENMIND_CLOUD_PRODUCTION
     const std::string version = "v2.15-rc1-raw400-live-";
 #else
@@ -23,6 +26,7 @@ int main() {
     assert(std::string(firmwareVersion).find(version + "p2-") != std::string::npos);
 #else
     assert(std::string(firmwareVersion).find(version + "p1-") != std::string::npos);
+#endif
 #endif
     assert(acceptsEndpoint(std::string(base) + "/chunks"));
     assert(!acceptsEndpoint(std::string(endpoint) + "?redirect=1"));

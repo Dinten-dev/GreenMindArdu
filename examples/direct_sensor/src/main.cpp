@@ -19,6 +19,7 @@
 #include <sys/time.h>
 #include <esp_sntp.h>
 #include <nvs.h>
+#include <string>
 
 #include "../../../direct_transport/DirectCore.h"
 #include "../../../direct_transport/BootIdentity.h"
@@ -155,14 +156,7 @@ static void submit(SampleBlock& block) {
     }
 }
 
-static bool sendDirect(const SampleBlock& block) {
-    // Owned exclusively by directWorker. Retain the TLS socket across uploads;
-    // constructing these per block made a handshake slower than acquisition.
-    auto& transport = directTransport;
-    auto& http = directHttp;
-    if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
-    const String digest = sha256(block.payload, block.byteCount());
-    JsonDocument metadata;
+static void fillDirectMetadata(const SampleBlock& block, JsonDocument& metadata) {
     metadata["protocol_version"] = block.capture.protocolVersion;
     if (block.capture.protocolVersion == 2) {
         metadata["boot_counter"] = block.capture.bootCounter;
@@ -175,10 +169,7 @@ static bool sendDirect(const SampleBlock& block) {
     }
     metadata["device_id"] = deviceId;
     metadata["session_id"] = block.capture.sessionId;
-    metadata["sequence"] = block.sequence;
     metadata["session_start_us"] = block.capture.sessionStartUs;
-    metadata["first_frame"] = block.firstFrame;
-    metadata["frame_count"] = block.frames;
     metadata["sample_rate"] = block.sampleRate;
     if (block.capture.signalProfile == greenmind::SignalProfile::Ad8232Raw400V1)
         metadata["signal_profile"] = greenmind::raw400Profile;
@@ -188,6 +179,41 @@ static bool sendDirect(const SampleBlock& block) {
     for (uint8_t i = 0; i < block.channels; ++i) labels.add(String("CH") + String(i + 1));
     metadata["calibration_version"] = block.sampleBits == 16 ? "unsigned-mv-linear-int16-v1" : "raw-adc-counts-v1";
     metadata["firmware_version"] = greenmind::cloud::firmwareVersion;
+}
+
+static String frozenDirectMetadata(const SampleBlock& block) {
+    JsonDocument metadata, envelope;
+    fillDirectMetadata(block, metadata);
+    envelope["host"] = greenmind::cloud::host;
+    envelope["metadata"] = metadata.as<JsonObjectConst>();
+    String result; serializeJson(envelope, result); return result;
+}
+
+#include "DirectFlashSpool.h"
+
+static bool sendDirect(const SampleBlock& block, const std::string* frozen = nullptr) {
+    // Owned exclusively by directWorker. Retain the TLS socket across uploads;
+    // constructing these per block made a handshake slower than acquisition.
+    auto& transport = directTransport;
+    auto& http = directHttp;
+    if (WiFi.status() != WL_CONNECTED || !hasClock.load(std::memory_order_acquire)) return false;
+    const String digest = sha256(block.payload, block.byteCount());
+    JsonDocument metadata;
+    if (frozen && !frozen->empty()) {
+        JsonDocument envelope;
+        if (deserializeJson(envelope, frozen->c_str()) ||
+            String(envelope["host"] | "") != greenmind::cloud::host ||
+            String(envelope["metadata"]["device_id"] | "") != deviceId) {
+            Serial.println("direct_flash_identity_mismatch retained=1"); return false;
+        }
+        metadata.set(envelope["metadata"].as<JsonObjectConst>());
+        if (metadata["sample_rate"].as<uint16_t>() != block.sampleRate ||
+            metadata["channels"].as<uint8_t>() != block.channels ||
+            metadata["sample_bits"].as<uint8_t>() != block.sampleBits) return false;
+    } else fillDirectMetadata(block, metadata);
+    metadata["sequence"] = block.sequence;
+    metadata["first_frame"] = block.firstFrame;
+    metadata["frame_count"] = block.frames;
     metadata["payload_sha256"] = digest;
     String header;
     serializeJson(metadata, header);
@@ -219,7 +245,7 @@ static bool sendDirect(const SampleBlock& block) {
         JsonDocument ack;
         if (!deserializeJson(ack, http.getString())) {
             acknowledged = greenmind::directAcknowledged(ack.as<JsonVariantConst>(),
-                deviceId.c_str(), block.capture.sessionId, block.sequence, digest.c_str());
+                deviceId.c_str(), metadata["session_id"].as<const char*>(), block.sequence, digest.c_str());
         }
     }
     directStatus.record(acknowledged, status, millis(), millis() - started);
@@ -304,10 +330,10 @@ static void gatewayWorker(void*) {
     }
 }
 
-static bool startContinuousAdc() {
+static bool startContinuousAdc(uint32_t frameBytes = 64, uint64_t* startedAt = nullptr) {
     adc_digi_init_config_t buffers{};
     buffers.max_store_buf_size = 16 * 1024;
-    buffers.conv_num_each_intr = 64;
+    buffers.conv_num_each_intr = frameBytes;
     buffers.adc1_chan_mask = 1U << ADC1_CHANNEL_3; // ESP32-S3 GPIO4
     if (adc_digi_initialize(&buffers) != ESP_OK) return false;
     adc_digi_pattern_config_t pattern{};
@@ -321,8 +347,10 @@ static bool startContinuousAdc() {
     config.sample_freq_hz = greenmind::MainsAverage20ms::rawHz;
     config.conv_mode = ADC_CONV_SINGLE_UNIT_1;
     config.format = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
-    if (adc_digi_controller_configure(&config) == ESP_OK && adc_digi_start() == ESP_OK)
-        return true;
+    if (adc_digi_controller_configure(&config) == ESP_OK) {
+        if (startedAt) *startedAt = esp_timer_get_time();
+        if (adc_digi_start() == ESP_OK) return true;
+    }
     adc_digi_deinitialize();
     return false;
 }
@@ -562,6 +590,20 @@ void setup() {
         configured = false;
         return;
     }
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+    if (mode != Mode::Direct || !prepareDirectFlashSpool()) {
+        Serial.println("direct_flash_mount_failed acquisition_paused=1 format_not_performed=1");
+        StatusDisplay::show("FLASHFEHLER", "Keine Aufnahme", "Journal bleibt erhalten",
+            "USB-Diagnose pruefen", "Keine Formatierung");
+        configured = false; return;
+    }
+    if (xTaskCreatePinnedToCore(directFlashWriter, "direct-flash", 16384, nullptr, 1, nullptr, 0) != pdPASS) {
+        Serial.println("direct_flash_writer_start_failed acquisition_paused=1");
+        StatusDisplay::show("FLASHFEHLER", "Keine Aufnahme", "Speicheraufgabe fehlt",
+            "USB-Diagnose pruefen", "Neustart erforderlich");
+        configured = false; return;
+    }
+#endif
     StatusDisplay::show("START", "WLAN verbinden...", greenmind::cloud::host, "Warte auf Verbindung", "");
     if (mode == Mode::Direct || mode == Mode::Dual)
         xTaskCreatePinnedToCore(directWorker, "direct-upload", 12288, nullptr, 1, nullptr, 0);
@@ -657,6 +699,7 @@ void loop() {
             millis(), StatusDisplay::ready() ? "ready" : "unavailable", portalActive,
             portalActive ? WiFi.softAPgetStationNum() : 0, WiFi.status());
         printAdcStats();
+        printDirectFlashStats();
         Serial.printf("direct_live active=%d packets=%u preview_dropped=%u http_errors=%u max_http_ms=%u\n",
             greenmind::liveDemand(millis(), liveUntil.load()), livePackets.exchange(0),
             liveDropped.exchange(0), liveHttpErrors.exchange(0), liveHttpMaximumMs.exchange(0));

@@ -52,3 +52,5 @@ secrets.ini
 private-observation/
 *.log
 *.core
+
+examples/direct_sensor/src/FailedBenchRecovery.generated.h
