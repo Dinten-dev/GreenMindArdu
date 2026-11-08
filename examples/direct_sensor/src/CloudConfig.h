@@ -5,6 +5,10 @@
 #define GREENMIND_DIRECT_PROTOCOL_VERSION 1
 #endif
 
+#if defined(GREENMIND_DIRECT_DURABLE_SPOOL) && (defined(GREENMIND_DIRECT_OTA) || GREENMIND_DIRECT_PROTOCOL_VERSION != 1)
+#error "Durable spool release requires its explicit USB-only protocol-1 target"
+#endif
+
 namespace greenmind::cloud {
 #ifdef GREENMIND_CLOUD_PRODUCTION
 inline constexpr char host[] = "green-mind.ch";
@@ -23,7 +27,9 @@ inline constexpr char preferencesNamespace[] = "gmdirectprod";
 #endif
 inline constexpr char firmwareVersion[] = GREENMIND_DIRECT_OTA_VERSION;
 #else
-#if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+inline constexpr char firmwareVersion[] = "direct-v2.16-rc3-dmaflash400-p1-production";
+#elif GREENMIND_DIRECT_PROTOCOL_VERSION == 2
 inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p2-production";
 #else
 inline constexpr char firmwareVersion[] = "direct-v2.15-rc1-raw400-live-p1-production";
@@ -36,7 +42,9 @@ inline constexpr char endpoint[] = "https://test.green-mind.ch/api/v1/direct-ing
 inline constexpr char label[] = "TESTUMGEBUNG";
 // Preserve already paired Staging devices and their existing credentials.
 inline constexpr char preferencesNamespace[] = "gmdirect";
-#if GREENMIND_DIRECT_PROTOCOL_VERSION == 2
+#ifdef GREENMIND_DIRECT_DURABLE_SPOOL
+inline constexpr char firmwareVersion[] = "direct-v2.16-rc3-dmaflash400-p1-staging";
+#elif GREENMIND_DIRECT_PROTOCOL_VERSION == 2
 inline constexpr char firmwareVersion[] = "direct-v2.15-rc4-raw400-live-p2-staging";
 #else
 inline constexpr char firmwareVersion[] = "direct-v2.15-rc4-raw400-live-p1-staging";
